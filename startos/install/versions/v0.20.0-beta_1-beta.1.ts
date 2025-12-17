@@ -1,5 +1,5 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
-import { readFile } from 'fs/promises'
+import { readFile, access } from 'fs/promises'
 import { storeJson } from '../../fileModels/store.json'
 import { load } from 'js-yaml'
 import { lndConfFile } from '../../fileModels/lnd.conf'
@@ -7,12 +7,27 @@ import { lndConfDefaults, lndDataDir, mainMounts, sleep } from '../../utils'
 import { base32, base64 } from 'rfc4648'
 import { sdk } from '../../sdk'
 import { restPort } from '../../interfaces'
+import { customConfigJson } from '../../fileModels/custom-config.json'
 
-export const v0_19_3_1_beta_0 = VersionInfo.of({
-  version: '0.19.3-beta:1-beta.0',
+export const v0_20_0_1 = VersionInfo.of({
+  version: '0.20.0-beta:1-beta.1',
   releaseNotes: 'Revamped for StartOS 0.4.0',
   migrations: {
     up: async ({ effects }) => {
+       try {
+          await access('/media/startos/volumes/main/custom-config.json')
+          console.log('Found existing custom-config.json')
+        } catch {
+          console.log("Couldn't find custom-config.json. Creating defaults.")
+          await customConfigJson.write(effects, {
+            rcloneConfig: null,
+            selectedRcloneRemotes: null,
+            enabledRemotes: null,
+            channelAutoBackupEnabled: false,
+            emailBackup: null,
+            emailEnabled: false,
+          })
+        }
       const store = await storeJson.read().once()
 
       if (store) return // only run migration if store doesn't exist (heuristic for 0.3.5.1 migrations)
@@ -107,8 +122,8 @@ export const v0_19_3_1_beta_0 = VersionInfo.of({
           mounts,
           'lnd-sub',
         )
-        
-        await sdk.Daemons.of(effects, async () => null)
+
+        await sdk.Daemons.of(effects)
           .addDaemon('primary', {
             exec: { command: ['lnd'] },
             subcontainer: lndSub,

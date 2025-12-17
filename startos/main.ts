@@ -14,7 +14,11 @@ import { storeJson } from './fileModels/store.json'
 import { customConfigJson } from './fileModels/custom-config.json'
 import { access } from 'fs/promises'
 import { base64 } from 'rfc4648'
-export const main = sdk.setupMain(async ({ effects, started }) => {
+
+export const main = sdk.setupMain(async ({ effects }) => {
+  /**
+   * ======================== Setup (optional) ========================
+   */
   console.log('Starting LND!')
 
   let {
@@ -288,7 +292,10 @@ export const main = sdk.setupMain(async ({ effects, started }) => {
       .const(effects)
   }
 
-  return sdk.Daemons.of(effects, () => started(() => Promise.resolve()))
+  /**
+   * ======================== Daemons ========================
+   */
+  return sdk.Daemons.of(effects)
     .addDaemon('primary', {
       exec: { command: ['lnd', ...lndArgs] },
       subcontainer: lndSub,
