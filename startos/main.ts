@@ -833,6 +833,12 @@ async function initializeLnd(
     mounts,
     'initialize-lnd',
     async (subc) => {
+      await subc.exec([
+        'sh', '-c',
+        `if grep -q '^bitcoin.node=neutrino$' /root/.lnd/lnd.conf; then 
+           sed -i '/^tor.active=/c\\tor.active=false' /root/.lnd/lnd.conf 2>/dev/null || echo 'tor.active=false' >> /root/.lnd/lnd.conf
+         fi`
+      ]);
       const child = await subc.spawn(['lnd'])
 
       let cipherSeed: string[] = []
