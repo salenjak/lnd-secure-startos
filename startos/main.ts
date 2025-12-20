@@ -570,69 +570,87 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
   requires: ['primary'],
 })
     .addHealthCheck('sync-progress', {
-      requires: ['primary', 'unlock-wallet'],
-      ready: {
-        display: 'Network and Graph Sync Progress',
-        fn: async () => {
-          const res = await lndSub.exec(
-            ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
-            {},
-            30_000,
-          )
-          if (
-            res.exitCode === 0 &&
-            res.stdout !== '' &&
-            typeof res.stdout === 'string'
-          ) {
-            const info: GetInfo = JSON.parse(res.stdout)
+  requires: ['primary', 'unlock-wallet'],
+  ready: {
+    display: 'Network and Graph Sync Progress',
+    fn: async () => {
+      const res = await lndSub.exec(
+        ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
+        {},
+        30_000,
+      )
+      if (
+        res.exitCode === 0 &&
+        res.stdout !== '' &&
+        typeof res.stdout === 'string'
+      ) {
+        const info: GetInfo = JSON.parse(res.stdout)
 
-            if (info.synced_to_chain && info.synced_to_graph) {
-              return {
-                message: 'Synced to chain and graph',
-                result: 'success',
-              }
-            } else if (!info.synced_to_chain && info.synced_to_graph) {
-              return {
-                message: 'Synced to graph but not to chain',
-                result: 'loading',
-              }
-            } else if (info.synced_to_chain && !info.synced_to_graph) {
-              return {
-                message: 'Synced to chain but not to graph',
-                result: 'loading',
-              }
-            } else {
-              return {
-                message: 'Not synced to chain or graph',
-                result: 'loading',
-              }
-            }
-          } else if (
-            res.exitCode === 2 &&
-            typeof res.stderr === 'string' &&
-            res.stderr.includes(
-              'rpc error: code = Unknown desc = waiting to start',
-            )
-          ) {
-            return {
-              message: 'LND is starting…',
-              result: 'starting',
-            }
-          }
-
-          if (res.exitCode === null) {
-            return {
-              message: 'Syncing to graph',
-              result: 'loading',
-            }
-          }
+        if (info.synced_to_chain && info.synced_to_graph) {
           return {
-            message: `Error: ${res.stderr as string}`,
-            result: 'failure',
+            message: 'Synced to chain and graph',
+            result: 'success',
           }
-        },
-      },
-    })
+            } else if (!info.synced_to_chain && info.synced_to_graph) {
+          return {
+                message: 'Syncing to chain',
+            result: 'loading',
+          }
+            } else if (!info.synced_to_graph && info.synced_to_chain) {
+              return {
+                message: 'Syncing to graph',
+            result: 'loading',
+          }
+        } else {
+          return {
+              message: 'Syncing to graph and chain',
+            result: 'loading',
+          }
+        }
+
+      } else if (
+        res.exitCode === 2 &&
+        typeof res.stderr === 'string' &&
+        res.stderr.includes(
+          'rpc error: code = Unknown desc = waiting to start',
+        )
+      ) {
+        return {
+          message: 'LND is starting…',
+          result: 'starting',
+        }
+      }
+
+      if (
+        res.stderr &&
+        typeof res.stderr === 'string' &&
+        (res.stderr.includes('wallet locked, unlock it to enable full RPC access') ||
+         res.stderr.includes('wallet is encrypted')) // Common error messages for locked wallet
+      ) {
+        const store = await storeJson.read().const(effects);
+        const autoUnlockEnabled = store?.autoUnlockEnabled ?? false;
+
+        if (!autoUnlockEnabled) {
+          return {
+            message: 'Waiting for wallet unlock to start syncing to chain and graph',
+            result: 'loading',
+          };
+        }
+      }
+
+      if (res.exitCode === null) {
+        return {
+          message: 'Syncing to graph',
+          result: 'loading',
+        }
+      }
+      return {
+        message: `Error: ${res.stderr as string}`,
+        result: 'failure',
+      }
+    },
+  },
+})
     .addHealthCheck('wallet-status', {
       requires: ['primary'],
       ready: {
@@ -670,7 +688,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
             } else {
               return {
                 message: 'Wallet is locked as auto-unlock is disabled. Go to \u{21D3} Tasks or "Actions ⇢ Security ⇢ Wallet - Manual Unlock" and enter correct password.',
-                result: 'failure',
+                result: 'loading',
               };
             }
           } else {
@@ -713,7 +731,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
       const wtStatus = `${wtText}${wtIcon}`;
 
       const allGood = backupEnabled && !autoUnlock && !seedOnServer && wtClientEnabled;
-      const result = allGood ? 'success' : 'failure';
+      const result = allGood ? 'success' : 'disabled';
 
       const label1 = `【① Channels Backup: `; 
       const label2 = `【② Wallet Unlocking: `; 
