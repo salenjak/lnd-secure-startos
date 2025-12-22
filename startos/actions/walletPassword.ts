@@ -338,13 +338,6 @@ export const disableAutoUnlock = sdk.Action.withInput(
         throw new Error('Cannot enable auto-unlock: No wallet password found in store.json and none provided. Please enter the password.')
       }
 
-      try {
-        await sdk.action.clearTask(effects, 'lnd', 'manual-wallet-unlock')
-        console.log('Manual unlock task cleared when enabling auto-unlock.')
-      } catch (err) {
-        console.warn('Could not clear manual unlock task (likely already gone).')
-      }
-
       await storeJson.merge(effects, { autoUnlockEnabled: true })
       console.log('Auto-unlock enabled in store.json.')
 

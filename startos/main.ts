@@ -54,13 +54,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
    }
 
   if (autoUnlockEnabled) {
-    console.log('Auto-unlock is enabled. Clearing manual-wallet-unlock task...')
-    try {
-      await sdk.action.clearTask(effects, 'lnd', 'manual-wallet-unlock')
-      console.log('✅ Manual unlock task cleared successfully.')
-    } catch (err) {
-      console.log('ℹ️ No manual-wallet-unlock task to clear (or already gone).')
-    }
+  console.log('Auto-unlock is enabled. Manual unlock task will not be created.')
   } else if (walletInitialized) {
     console.log('Auto-unlock disabled and wallet initialized. Creating manual unlock task...')
     try {
@@ -68,9 +62,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
       await sdk.action.createOwnTask(effects, manualWalletUnlock, 'optional', {
         reason: 'LND wallet is locked and auto-unlock is disabled. Use the "Unlock Wallet" action to provide your password. If you have enabled auto-unlock, you can safely dismiss this task.',
       })
-      console.log('✅ Manual unlock task created.')
+      console.log('Manual unlock task created.')
     } catch (err) {
-      console.warn('⚠️ Failed to create manual unlock task:', (err as Error).message)
+      console.warn('Failed to create manual unlock task:', (err as Error).message)
     }
   }
 

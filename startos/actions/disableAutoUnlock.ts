@@ -130,28 +130,6 @@ export const disableAutoUnlock = sdk.Action.withInput(
         throw new Error('Cannot enable auto-unlock: No wallet password found in store.json and none provided. Please enter a valid password (minimum 8 characters).')
       }
 
-      let taskCleared = false
-      const maxAttempts = 3
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          console.log(`Attempting to clear manual-wallet-unlock task (attempt ${attempt}/${maxAttempts})...`)
-          await sdk.action.clearTask(effects, 'lnd', 'manual-wallet-unlock')
-          console.log(`Successfully cleared manual-wallet-unlock task (attempt ${attempt}).`)
-          taskCleared = true
-          break
-        } catch (clearTaskErr) {
-          console.error(`Failed to clear manual-wallet-unlock task (attempt ${attempt}):`, (clearTaskErr as Error).message || String(clearTaskErr))
-          if (attempt < maxAttempts) {
-            console.log(`Waiting 2 seconds before retrying clearTask (attempt ${attempt + 1})...`)
-            await new Promise(resolve => setTimeout(resolve, 2000))
-          }
-        }
-      }
-
-      if (!taskCleared) {
-        console.error('All attempts to clear manual-wallet-unlock task failed. Dashboard may show stale task.')
-      }
-
       try {
         await storeJson.merge(effects, {
           autoUnlockEnabled: true,
