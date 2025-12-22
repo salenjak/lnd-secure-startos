@@ -60,7 +60,6 @@ export const manualWalletUnlock = sdk.Action.withInput(
             '--no-progress-meter',
             '-X',
             'POST',
-            '--insecure',
             '--cacert',
             `${lndDataDir}/tls.cert`,
             'https://lnd.startos:8080/v1/unlockwallet',

@@ -11,6 +11,8 @@ import { restPort } from './interfaces'
 import { lndConfFile } from './fileModels/lnd.conf'
 import { manifest } from './manifest'
 import { storeJson } from './fileModels/store.json'
+import { Effects, SIGTERM } from '@start9labs/start-sdk/base/lib/types'
+import { Mounts } from '@start9labs/start-sdk/package/lib/mainFn/Mounts'
 import { customConfigJson } from './fileModels/custom-config.json'
 import { access } from 'fs/promises'
 import { base64 } from 'rfc4648'
@@ -109,142 +111,126 @@ export const main = sdk.setupMain(async ({ effects }) => {
   }
 
   if (pendingPasswordChange) {
-    if (!walletPassword) {
-      throw new Error('Cannot change password: no current password available')
-    }
-    console.log('Pending password change detected. Performing change...')
-    const newPassword = Buffer.from(pendingPasswordChange, 'base64').toString('utf8')
-    const currentPassword = walletPassword
-    
+  if (!walletPassword) {
+    throw new Error('Cannot change password: no current password available')
+  }
+  console.log('Pending password change detected. Performing change...')
+  const newPassword = Buffer.from(pendingPasswordChange, 'base64').toString('utf8')
+  const currentPassword = walletPassword
 
-    try {
-      await sdk.SubContainer.withTemp(
-        effects,
-        { imageId: 'lnd' },
-        mounts,
-        'change-password-temp',
-        async (lndSub) => {
-          const lndArgs: string[] = []
-          if (resetWalletTransactions) lndArgs.push('--reset-wallet-transactions')
-          lndArgs.push('--nobootstrap')
-          lndArgs.push('--debuglevel=info')
-          lndArgs.push('--rpclisten=0.0.0.0:10009')
-          lndArgs.push('--restlisten=0.0.0.0:8080')
+  try {
+    await sdk.SubContainer.withTemp(
+      effects,
+      { imageId: 'lnd' },
+      mounts,
+      'change-password-temp',
+      async (lndSub) => {
+        const lndArgs: string[] = [
+          '--rpclisten=0.0.0.0:10009',
+          '--restlisten=0.0.0.0:8080',
+          '--debuglevel=error'
+        ]
 
-          console.log('Spawning LND with args:', lndArgs)
-          await lndSub.spawn(['lnd', ...lndArgs])
+        console.log('Starting LND for password change...')
+        await lndSub.spawn(['lnd', ...lndArgs])
 
-          await new Promise(r => setTimeout(r, 2000))
-          let attempts = 0
-          const maxAttempts = 60
-          let restReady = false
-          while (attempts < maxAttempts) {
-            try {
-              const portTest = await lndSub.exec([
-                'curl',
-                '--no-progress-meter',
-                '--insecure',
-                '--cacert',
-                `${lndDataDir}/tls.cert`,
-                'https://localhost:8080/v1/genseed',
-              ])
-              if (portTest.exitCode === 0) {
-                restReady = true
-                break
-              }
-            } catch (e: unknown) {
-              const errorMessage = e instanceof Error ? e.message : String(e)
-              console.log('REST API check failed:', errorMessage)
+        let attempts = 0
+        const maxAttempts = 60
+        let restReady = false
+        
+        while (attempts < maxAttempts && !restReady) {
+          try {
+            const healthCheck = await lndSub.exec([
+              'curl', '--no-progress-meter', 
+              '--cacert', `${lndDataDir}/tls.cert`,
+              'https://lnd.startos:8080/v1/getinfo',
+            ])
+            
+            if (healthCheck.exitCode === 0) {
+              restReady = true
+              console.log('✅ LND REST API is ready')
             }
+          } catch (e) {
+          }
+          
+          if (!restReady) {
             await new Promise(r => setTimeout(r, 1000))
             attempts++
+            console.log(`⏳ Waiting for LND to start... (${attempts}/${maxAttempts})`)
           }
-          if (!restReady) {
-            throw new Error('LND REST port not ready after 60s.')
-          }
+        }
 
-          const currentBase64 = Buffer.from(currentPassword, 'utf8').toString('base64')
-          const newBase64 = Buffer.from(newPassword, 'utf8').toString('base64')
-          const jsonBody = JSON.stringify({
+        if (!restReady) {
+          throw new Error(`LND REST API not ready after ${maxAttempts} seconds. Check LND logs for errors.`)
+        }
+
+        const currentBase64 = Buffer.from(currentPassword, 'utf8').toString('base64')
+        const newBase64 = Buffer.from(newPassword, 'utf8').toString('base64')
+        
+        const changeResult = await lndSub.exec([
+         'curl',
+                      '--no-progress-meter',
+                      '-X',
+                      'POST',
+                      '--cacert',
+                      `${lndDataDir}/tls.cert`,
+                      'https://lnd.startos:8080/v1/changepassword',
+                      '-d', JSON.stringify({
             current_password: currentBase64,
             new_password: newBase64,
-            stateless_init: false,
-            new_macaroon_root_key: false,
-          }).replace(/"/g, '\\"')
-          const curlCmd = `curl -v -X POST --insecure --cacert ${lndDataDir}/tls.cert https://localhost:8080/v1/changepassword -H "Content-Type: application/json" -d "${jsonBody}"`
-          const changeResult = await lndSub.exec(['sh', '-c', curlCmd])
+          })
+        ])
 
-          if (changeResult.exitCode !== 0) {
-            const errStr = (changeResult.stderr?.toString() || changeResult.stdout?.toString() || '').toLowerCase()
-            throw new Error(`Password change failed: ${errStr.substring(0, 300)}...`)
-          }
+        if (changeResult.exitCode !== 0) {
+          const errorOutput = changeResult.stderr?.toString() || changeResult.stdout?.toString() || 'Unknown error'
+          throw new Error(`Password change failed: ${errorOutput.substring(0, 300)}...`)
+        }
 
-          const response = changeResult.stdout?.toString().trim()
-          let apiError = null
-          if (response && response !== '{}') {
-            try {
-              const parsed = JSON.parse(response)
-              if (parsed.error || parsed.message) {
-                apiError = parsed.message || parsed.error || response
-              }
-            } catch (e) {
-              apiError = response
+        const response = changeResult.stdout?.toString().trim() || '{}'
+        if (response !== '{}' && !response.includes('"success":true')) {
+          try {
+            const parsed = JSON.parse(response)
+            if (parsed.error || parsed.message) {
+              throw new Error(`API error: ${parsed.message || parsed.error}`)
             }
+          } catch (e) {
+            throw new Error(`Unexpected response: ${response.substring(0, 200)}...`)
           }
-          if (apiError) {
-            throw new Error(`API error: ${apiError.substring(0, 200)}...`)
-          }
+        }
 
-          await lndSub.exec(['pkill', '-9', 'lnd'])
-        },
-      )
+        console.log('Password changed successfully')
+      },
+    )
 
-      console.log('Updating store with new password')
-      await storeJson.merge(effects, {
-        walletPassword: newPassword,
-        pendingPasswordChange: null,
-        passwordChangeError: null,
-        autoUnlockEnabled: true,
-      })
-      console.log('Password changed successfully.')
+    await storeJson.merge(effects, {
+      walletPassword: newPassword,
+      pendingPasswordChange: null,
+      passwordChangeError: null,
+      autoUnlockEnabled: true,
+    })
 
-      try {
-        await sdk.action.clearTask(effects, 'lnd', 'manual-wallet-unlock')
-        console.log('✅ Manual unlock task cleared after password change.')
-      } catch (clearTaskErr) {
-        console.warn('ℹ️ Could not clear manual unlock task (likely already gone).')
-      }
-
-      const updatedStore = (await storeJson.read().once())!
-      walletPassword = updatedStore.walletPassword
-      recoveryWindow = updatedStore.recoveryWindow
-      resetWalletTransactions = updatedStore.resetWalletTransactions
-      restore = updatedStore.restore
-      walletInitialized = updatedStore.walletInitialized
-      watchtowers = updatedStore.watchtowers
-      pendingPasswordChange = updatedStore.pendingPasswordChange
-      passwordChangeError = updatedStore.passwordChangeError
-      autoUnlockEnabled = updatedStore.autoUnlockEnabled
-      seedBackupConfirmed = updatedStore.seedBackupConfirmed
-      passwordBackupConfirmed = updatedStore.passwordBackupConfirmed
-      console.log('Auto-unlock enabled after password change:', autoUnlockEnabled)
-    } catch (err) {
-      console.error('Password change failed:', err)
-      await storeJson.merge(effects, {
-        pendingPasswordChange: null,
-        passwordChangeError: (err as Error).message || String(err),
-      })
-      throw err
-    }
+    const updatedStore = (await storeJson.read().once())!
+    walletPassword = updatedStore.walletPassword
+    autoUnlockEnabled = updatedStore.autoUnlockEnabled
+    console.log('Auto-unlock enabled after password change:', autoUnlockEnabled)
+    
+  } catch (err) {
+    console.error('Password change failed:', err)
+    await storeJson.merge(effects, {
+      pendingPasswordChange: null,
+      passwordChangeError: (err as Error).message || String(err),
+    })
+    throw err
   }
+}
 
   await storeJson.read().const(effects)
 
   const osIp = await sdk.getOsIp(effects)
 
-  if (
-    ![conf.rpclisten].flat()?.includes(lndConfDefaults.rpclisten[0]) ||
-    ![conf.restlisten].flat()?.includes(lndConfDefaults.restlisten[0]) ||
+ if (
+    ![conf.rpclisten].flat()?.includes(lndConfDefaults.rpclisten) ||
+    ![conf.restlisten].flat()?.includes(lndConfDefaults.restlisten) ||
     conf['tor.socks'] !== `${osIp}:9050`
   ) {
     await lndConfFile.merge(
@@ -281,6 +267,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     'lnd-sub',
   )
 
+  // Restart if Bitcoin .cookie changes if using bitcoin backend
   if (conf['bitcoin.node'] === 'bitcoind') {
     await FileHelper.string(`${lndSub.rootfs}/mnt/bitcoin/.cookie`)
       .read()
@@ -338,15 +325,18 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
       
       const command = [
         'curl',
-        '--no-progress-meter',
-        '-X', 'POST',
-        '--insecure',
-        '--cacert', `${lndDataDir}/tls.cert`,
-        'https://lnd.startos:8080/v1/unlockwallet',
-        '-d',
-        restore
-          ? JSON.stringify({ wallet_password: walletPasswordForApi, recovery_window: recoveryWindow })
-          : JSON.stringify({ wallet_password: walletPasswordForApi })
+              '--no-progress-meter',
+              '-X',
+              'POST',
+              '--cacert',
+              `${lndDataDir}/tls.cert`,
+              'https://lnd.startos:8080/v1/unlockwallet',
+              '-d',
+              restore
+          ? JSON.stringify({
+             wallet_password: walletPasswordForApi, recovery_window: recoveryWindow })
+          : JSON.stringify({
+             wallet_password: walletPasswordForApi })
       ];
       
       const result = await subcontainer.exec(command, undefined, undefined, { 
@@ -602,6 +592,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
             result: 'loading',
           }
         } else {
+          
           return {
               message: 'Syncing to graph and chain',
             result: 'loading',
@@ -625,7 +616,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
         res.stderr &&
         typeof res.stderr === 'string' &&
         (res.stderr.includes('wallet locked, unlock it to enable full RPC access') ||
-         res.stderr.includes('wallet is encrypted')) // Common error messages for locked wallet
+         res.stderr.includes('wallet is encrypted'))
       ) {
         const store = await storeJson.read().const(effects);
         const autoUnlockEnabled = store?.autoUnlockEnabled ?? false;
@@ -801,8 +792,9 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
             subcontainer: lndSub,
             exec: {
               fn: async (subcontainer: typeof lndSub, abort) => {
+                                // Setup watchtowers at runtime because for some reason they can't be setup in lnd.conf
                 for (const tower of watchtowers || []) {
-                  if (abort.aborted) return null
+                  if (abort.aborted) break
                   console.log(`Watchtower client adding ${tower}`)
                   let res = await subcontainer.exec(
                     [
@@ -840,8 +832,8 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
 })
 
 async function initializeLnd(
-  effects: any,
-  mounts: typeof mainMounts,
+   effects: Effects,
+  mounts: Mounts<typeof manifest>,
 ) {
   await sdk.SubContainer.withTemp(
     effects,
@@ -865,7 +857,6 @@ async function initializeLnd(
           'curl',
           '--no-progress-meter',
           'GET',
-          '--insecure',
           '--cacert',
           `${lndDataDir}/tls.cert`,
           '--fail-with-body',
@@ -899,23 +890,25 @@ await storeJson.merge(effects, {
 
 const status = await subc.exec([
   'curl',
-  '--no-progress-meter',
-  '-X', 'POST',
-  '--insecure',
-  '--cacert', `${lndDataDir}/tls.cert`,
-  '--fail-with-body',
-  'https://lnd.startos:8080/v1/initwallet',
-  '-d', JSON.stringify({
+        '--no-progress-meter',
+        '-X',
+        'POST',
+        '--cacert',
+        `${lndDataDir}/tls.cert`,
+        '--fail-with-body',
+        'https://lnd.startos:8080/v1/initwallet',
+        '-d',
+        `${JSON.stringify({
     wallet_password: walletPasswordForApi,
     cipher_seed_mnemonic: cipherSeed,
-  }),
+        })}`,
 ])
 
       if (status.stderr !== '' && typeof status.stderr === 'string') {
         console.log(`Error running initwallet: ${status.stderr}`)
       }
 
-      child.kill('SIGTERM')
+      child.kill(SIGTERM)
       await new Promise<void>((resolve) => {
         child.on('exit', () => resolve())
         setTimeout(resolve, 60_000)
