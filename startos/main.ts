@@ -668,7 +668,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
             if (autoUnlockEnabled) {
               return {
                 message: `Wallet is locked, but auto-unlock is enabled. \u{1F511} Password is not correct! Go to "Actions ⇢ Security ⇢ Wallet - Auto-Unlock" and enter correct password.`,
-                result: 'failure',
+                result: 'loading',
               };
             } else {
               return {
