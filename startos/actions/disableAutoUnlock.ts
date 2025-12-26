@@ -13,7 +13,7 @@ export const disableAutoUnlock = sdk.Action.withInput(
   'wallet-auto-unlock',
   async ({ effects }: { effects: Effects }) => {
     const store = await storeJson.read().const(effects)
-    const currentState = store?.autoUnlockEnabled ?? false // Default to false to avoid stuck ENABLED state
+    const currentState = store?.autoUnlockEnabled ?? false
     const walletInitState = store?.walletInitialized ?? false
     const walletPasswordExists = !!store?.walletPassword
 
@@ -25,7 +25,8 @@ export const disableAutoUnlock = sdk.Action.withInput(
       actionName = `Wallet - Auto-Unlock: ENABLED \u{1F513}`
       actionDescription = `Enable / Disable auto-unlocking of the LND wallet on startup. The disabled state protects your on-chain and off-chain Bitcoin in case of server theft. If enabled, anyone with physical access to the server can reflash StartOS, set a new master password, and use apps (RTL, ThunderHub, etc.) or other methods to steal funds, since the LND wallet.db is automatically unlocked with the password from the store.json file.
       <div>⚠️IMPORTANT: Confirm password backup to disable auto-unlocking because password will be deleted from the server.</div>`
-      actionWarning = `Disabling auto-unlock will delete your password from the server and require manual unlocking using the "Wallet - Manual Unlock" action below, or from the "Dashboard ⇢ Tasks" when starting LND.<br>\u{1F4A1} If you want to switch back to the official StartOS LND package (same version), you must re-enable auto-unlock first.`    } else {
+      actionWarning = `Disabling auto-unlock will delete your password from the server and require manual unlocking using the "Wallet - Manual Unlock" action below, or from the "Dashboard ⇢ Tasks" when starting LND.<br>\u{1F4A1} If you want to switch back to the official StartOS LND package (same version), you must re-enable auto-unlock first.`    
+    } else {
       actionName = `Wallet - Auto-Unlock: DISABLED \u{1F512}`
       actionDescription = `Enable / Disable auto-unlocking of the LND wallet on startup. The disabled state protects your on-chain and off-chain Bitcoin in case of server theft. If enabled, anyone with physical access to the server can reflash StartOS, set a new master password, and use apps (RTL, ThunderHub, etc.) or other methods to steal funds, since the LND wallet.db is automatically unlocked with the password from the store.json file.
       <div>⚠️IMPORTANT: Enabling auto-unlock stores password on server, risking fund theft if server is stolen.</div>`
@@ -51,7 +52,7 @@ export const disableAutoUnlock = sdk.Action.withInput(
     autoUnlockEnabled: Value.toggle({
       name: 'Auto-Unlock Wallet',
       description: 'Enable or disable auto-unlocking of the wallet on startup.',
-      default: false, // Changed to false to align with initial state
+      default: false,
     }),
     walletPasswordInput: Value.text({
       name: 'Wallet Password (if enabling)',
@@ -78,38 +79,20 @@ export const disableAutoUnlock = sdk.Action.withInput(
     }
 
     if (!input.autoUnlockEnabled) {
-      try {
-        await storeJson.merge(effects, {
-          autoUnlockEnabled: false,
-          walletPassword: null,
-
-        })
-        console.log('Auto-unlock disabled. Password cleared from store.json.')
-        try {
-          console.log('Initiating service restart to apply auto-unlock disable and update UI.')
-          await sdk.restart(effects)
-          console.log('Service restart initiated successfully.')
-        } catch (restartErr) {
-          console.error('Failed to restart service after disabling auto-unlock:', (restartErr as Error).message || String(restartErr))
-          await storeJson.merge(effects, {
-            autoUnlockEnabled: currentState,
-            walletPassword: store?.walletPassword || null,
-          })
-          throw new Error(`Failed to restart service: ${(restartErr as Error).message}`)
-        }
-        return {
-          version: '1',
-          title: 'Auto-Unlock Disabled',
-          message: `<div>ℹ️ Wallet is now locked as auto-unlock is disabled.</div>
-                    <div>The service is restarting to apply changes.</div>
-                    <table class="g-table"><thead><tr><th>⚠️ IMPORTANT: Every time LND restart you need to:</th></tr></thead><tbody>
-                    <tr class="ng-star-inserted"><td>1️⃣ Go to "Dashboard ⇢ Tasks" or "Actions ⇢ Security ⇢ Wallet - Manual Unlock".</td></tr>
-                    <tr class="ng-star-inserted"><td>2️⃣ Enter password to manually unlock the wallet</td></tr></tbody></table>`,
-          result: null,
-        }
-      } catch (err) {
-        console.error('Error disabling auto-unlock:', err)
-        throw new Error(`Failed to disable auto-unlock: ${(err as Error).message}`)
+      await storeJson.merge(effects, {
+        autoUnlockEnabled: false,
+        walletPassword: null,
+      })
+      console.log('Auto-unlock disabled. Password cleared from store.json.')
+      return {
+        version: '1',
+        title: 'Auto-Unlock Disabled',
+        message: `<div>ℹ️ Wallet is now locked as auto-unlock is disabled.</div>
+                  <div>The service is restarting to apply changes.</div>
+                  <table class="g-table"><thead><tr><th>⚠️ IMPORTANT: Every time LND restart you need to:</th></tr></thead><tbody>
+                  <tr class="ng-star-inserted"><td>1️⃣ Go to "Dashboard ⇢ Tasks" or "Actions ⇢ Security ⇢ Wallet - Manual Unlock".</td></tr>
+                  <tr class="ng-star-inserted"><td>2️⃣ Enter password to manually unlock the wallet</td></tr></tbody></table>`,
+        result: null,
       }
     } else {
       let passwordToUse = store?.walletPassword
@@ -130,42 +113,21 @@ export const disableAutoUnlock = sdk.Action.withInput(
         throw new Error('Cannot enable auto-unlock: No wallet password found in store.json and none provided. Please enter a valid password (minimum 8 characters).')
       }
 
-      try {
-        await storeJson.merge(effects, {
-          autoUnlockEnabled: true,
-        })
-        console.log('Auto-unlock enabled in store.json.')
-      } catch (err) {
-        console.error('Error enabling auto-unlock:', err)
-        throw new Error(`Failed to enable auto-unlock: ${(err as Error).message}`)
-      }
-
-      console.log('Waiting 5 seconds before initiating service restart...')
-      await new Promise(resolve => setTimeout(resolve, 5000))
-
-      try {
-        console.log('Initiating service restart to apply auto-unlock and update UI.')
-        await sdk.restart(effects)
-        console.log('Service restart initiated successfully.')
-        const msgSuffix = input.walletPasswordInput != null && input.walletPasswordInput.trim() !== '' ? ' The provided password has been stored.' : ''
-        return {
-          version: '1',
-          title: 'Auto-Unlock Enabled',
-          message: `<div>ℹ️ The wallet will unlock automatically on startup using the stored password.</div>
-                    <div>The service is restarting to apply changes and update the UI.</div>
-                    <table class="g-table"><thead><tr><th>⚠️ IMPORTANT: If the wallet remains locked (health check shows an error), the password may be incorrect:</th></tr></thead><tbody>
-                    <tr class="ng-star-inserted"><td>1️⃣ Return to "Actions ⇢ Security ⇢ Auto-Unlock Wallet".</td></tr>
-                    <tr class="ng-star-inserted"><td>2️⃣ Enter correct password and hit "Submit" button.</td></tr>
-                    <tr class="ng-star-inserted"><td>3️⃣ Go to "Dashboard ⇢ Health Checks". Wallet Status	must be "Success: Wallet is unlocked".</td></tr></tbody></table>`,
-          result: null,
-        }
-      } catch (restartErr) {
-        console.error('Failed to restart service after enabling auto-unlock:', (restartErr as Error).message || String(restartErr))
-        await storeJson.merge(effects, {
-          autoUnlockEnabled: currentState,
-          walletPassword: store?.walletPassword || null,
-        })
-        throw new Error(`Failed to restart service: ${(restartErr as Error).message}`)
+      await storeJson.merge(effects, {          
+        autoUnlockEnabled: true,
+      })
+      console.log('Auto-unlock enabled in store.json.')
+      
+      return {
+        version: '1',
+        title: 'Auto-Unlock Enabled',
+        message: `<div>ℹ️ The wallet will unlock automatically on startup using the stored password.</div>
+                  <div>The service is restarting to apply changes and update the UI.</div>
+                  <table class="g-table"><thead><tr><th>⚠️ IMPORTANT: If the wallet remains locked (health check shows an error), the password may be incorrect:</th></tr></thead><tbody>
+                  <tr class="ng-star-inserted"><td>1️⃣ Return to "Actions ⇢ Security ⇢ Auto-Unlock Wallet".</td></tr>
+                  <tr class="ng-star-inserted"><td>2️⃣ Enter correct password and hit "Submit" button.</td></tr>
+                  <tr class="ng-star-inserted"><td>3️⃣ Go to "Dashboard ⇢ Health Checks". Wallet Status	must be "Success: Wallet is unlocked".</td></tr></tbody></table>`,
+        result: null,
       }
     }
   },
