@@ -353,7 +353,7 @@ sdk.InputSpec.of({
         default: '',
         required: false,
         patterns: [
-                  { regex: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$', description: 'Can contain letters, numbers, @, underscores, and hyphens.' }
+                  { regex: '^[a-zA-Z0-9._%+-@/:]+$', description: 'Often your full email address or an API key' }
                 ]
       }),
       'email-smtp-pass': sdk.Value.text({
