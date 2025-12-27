@@ -26,16 +26,11 @@ export const setExternalGateway = sdk.Action.withInput(
         .getOwn(effects, 'peer')
         .const()
 
-<<<<<<< HEAD
-      const privateHostnameInfos =
-        (peerInterface?.addressInfo?.public.filter({kind: 'ip'}) || []) as (T.HostnameInfo & { kind: 'ip' })[]
-=======
       let privateHostnameInfos = (peerInterface?.addressInfo?.public
         .filter({
           kind: 'ip',
         })
         .format('hostname-info') || []) as (T.HostnameInfo & { kind: 'ip' })[]
->>>>>>> upstream/update/040
 
       return {
         name: 'Select Gateway',
