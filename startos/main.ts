@@ -554,7 +554,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
   requires: ['primary'],
 })
     .addHealthCheck('sync-progress', {
-  requires: ['primary', 'unlock-wallet'],
+  requires: ['primary'],
   ready: {
     display: 'Network and Graph Sync Progress',
     fn: async () => {
