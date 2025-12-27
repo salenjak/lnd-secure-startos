@@ -10,6 +10,7 @@ on:
     branches: ['main', 'master', 'update/040']
 
 jobs:
+<<<<<<< HEAD
   BuildPackage:
     runs-on: ubuntu-latest
     steps:
@@ -36,3 +37,9 @@ jobs:
         with:
           name: ${{ env.package_id }}.s9pk
           path: ./${{ env.package_id }}.s9pk
+=======
+  build:
+    uses: start9labs/shared-workflows/.github/workflows/buildService.yml@master
+    secrets:
+      DEV_KEY: ${{ secrets.DEV_KEY }}
+>>>>>>> upstream/update/040
