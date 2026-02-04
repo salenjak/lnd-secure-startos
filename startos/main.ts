@@ -357,7 +357,6 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
           if (abort.aborted) {
             throw new Error('Unlock aborted during retry delay');
           }
-<<<<<<< HEAD
           await new Promise(resolve => setTimeout(resolve, pollIntervalMs));  // Check abort every 0.5s
         }
       } else {
@@ -560,7 +559,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
     .addHealthCheck('sync-progress', {
   requires: ['primary'],
   ready: {
-    display: 'Network and Graph Sync Progress',
+        display: i18n('Network and Graph Sync Progress'),
     fn: async () => {
       const res = await lndSub.exec(
         ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
@@ -576,82 +575,18 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
 
         if (info.synced_to_chain && info.synced_to_graph) {
           return {
-            message: 'Synced to chain and graph',
+                message: i18n('Synced to chain and graph'),
             result: 'success',
           }
             } else if (!info.synced_to_chain && info.synced_to_graph) {
           return {
-                message: 'Syncing to chain',
+                message: i18n('Syncing to chain'),
             result: 'loading',
           }
-            } else if (!info.synced_to_graph && info.synced_to_chain) {
-              return {
-                message: 'Syncing to graph',
-            result: 'loading',
-=======
-          return null
-        },
-      },
-      subcontainer: lndSub,
-      requires: ['primary'],
-    })
-    .addHealthCheck('sync-progress', {
-      requires: ['primary', 'unlock-wallet'],
-      ready: {
-        display: i18n('Network and Graph Sync Progress'),
-        fn: async () => {
-          const res = await lndSub.exec(
-            ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
-            {},
-            30_000,
-          )
-          if (
-            res.exitCode === 0 &&
-            res.stdout !== '' &&
-            typeof res.stdout === 'string'
-          ) {
-            const info: GetInfo = JSON.parse(res.stdout)
-
-            if (info.synced_to_chain && info.synced_to_graph) {
-              return {
-                message: i18n('Synced to chain and graph'),
-                result: 'success',
-              }
-            } else if (!info.synced_to_chain && info.synced_to_graph) {
-              return {
-                message: i18n('Syncing to chain'),
-                result: 'loading',
-              }
             } else if (!info.synced_to_graph && info.synced_to_chain) {
               return {
                 message: i18n('Syncing to graph'),
-                result: 'loading',
-              }
-            }
-
-            return {
-              message: i18n('Syncing to graph and chain'),
-              result: 'loading',
-            }
-          }
-
-          if (
-            res.stderr.includes(
-              'rpc error: code = Unknown desc = waiting to start',
-            )
-          ) {
-            return {
-              message: i18n('LND is starting…'),
-              result: 'starting',
-            }
-          }
-
-          if (res.exitCode === null) {
-            return {
-              message: i18n('Syncing to graph'),
-              result: 'loading',
-            }
->>>>>>> upstream/update/040
+            result: 'loading',
           }
         } else {
           
