@@ -1,3 +1,4 @@
+import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { FileHelper } from '@start9labs/start-sdk'
 import {
@@ -21,7 +22,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   /**
    * ======================== Setup (optional) ========================
    */
-  console.log('Starting LND!')
+  console.info(i18n('Starting LND!'))
 
   let {
     recoveryWindow,
@@ -276,11 +277,13 @@ export const main = sdk.setupMain(async ({ effects }) => {
       exec: { command: ['lnd', ...lndArgs] },
       subcontainer: lndSub,
       ready: {
-        display: 'REST Interface',
+        display: i18n('REST Interface'),
         fn: () =>
           sdk.healthCheck.checkPortListening(effects, restPort, {
-            successMessage: 'The REST interface is ready to accept connections',
-            errorMessage: 'The REST Interface is not ready',
+            successMessage: i18n(
+              'The REST interface is ready to accept connections',
+            ),
+            errorMessage: i18n('The REST Interface is not ready'),
           }),
       },
       requires: [],
@@ -354,6 +357,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
           if (abort.aborted) {
             throw new Error('Unlock aborted during retry delay');
           }
+<<<<<<< HEAD
           await new Promise(resolve => setTimeout(resolve, pollIntervalMs));  // Check abort every 0.5s
         }
       } else {
@@ -584,6 +588,70 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
               return {
                 message: 'Syncing to graph',
             result: 'loading',
+=======
+          return null
+        },
+      },
+      subcontainer: lndSub,
+      requires: ['primary'],
+    })
+    .addHealthCheck('sync-progress', {
+      requires: ['primary', 'unlock-wallet'],
+      ready: {
+        display: i18n('Network and Graph Sync Progress'),
+        fn: async () => {
+          const res = await lndSub.exec(
+            ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
+            {},
+            30_000,
+          )
+          if (
+            res.exitCode === 0 &&
+            res.stdout !== '' &&
+            typeof res.stdout === 'string'
+          ) {
+            const info: GetInfo = JSON.parse(res.stdout)
+
+            if (info.synced_to_chain && info.synced_to_graph) {
+              return {
+                message: i18n('Synced to chain and graph'),
+                result: 'success',
+              }
+            } else if (!info.synced_to_chain && info.synced_to_graph) {
+              return {
+                message: i18n('Syncing to chain'),
+                result: 'loading',
+              }
+            } else if (!info.synced_to_graph && info.synced_to_chain) {
+              return {
+                message: i18n('Syncing to graph'),
+                result: 'loading',
+              }
+            }
+
+            return {
+              message: i18n('Syncing to graph and chain'),
+              result: 'loading',
+            }
+          }
+
+          if (
+            res.stderr.includes(
+              'rpc error: code = Unknown desc = waiting to start',
+            )
+          ) {
+            return {
+              message: i18n('LND is starting…'),
+              result: 'starting',
+            }
+          }
+
+          if (res.exitCode === null) {
+            return {
+              message: i18n('Syncing to graph'),
+              result: 'loading',
+            }
+>>>>>>> upstream/update/040
           }
         } else {
           
@@ -745,9 +813,10 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
               fn: async () => {
                 await sdk.setHealth(effects, {
                   id: 'restored',
-                  name: 'Backup Restoration Detected',
-                  message:
+                  name: i18n('Backup Restoration Detected'),
+                  message: i18n(
                     'Lightning Labs strongly recommends against continuing to use a LND node after running restorechanbackup. Please recover and sweep any remaining funds to another wallet. Afterwards LND should be uninstalled. LND can then be re-installed fresh if you would like to continue using LND.',
+                  ),
                   result: 'failure',
                 })
                 return {
@@ -769,11 +838,12 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
       !conf.externalip && !conf.externalhosts?.length
         ? ({
             ready: {
-              display: 'Node Reachability',
+              display: i18n('Node Reachability'),
               fn: () => ({
                 result: 'disabled',
-                message:
+                message: i18n(
                   'Your node can peer with other nodes, but other nodes cannot peer with you. Optionally add a Tor domain, public domain, or public IP address to change this behavior.',
+                ),
               }),
             },
             requires: ['primary'],

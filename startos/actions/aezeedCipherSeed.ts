@@ -1,3 +1,4 @@
+import { i18n } from '../i18n'
 import { storeJson } from '../fileModels/store.json'
 import { sdk } from '../sdk'
 import type { Effects } from '@start9labs/start-sdk/base/lib/types'
@@ -57,9 +58,10 @@ export const aezeedCipherSeed = sdk.Action.withoutInput(
 
     return {
       version: '1',
-      title: 'Aezeed Cipher Seed',
-      message:
+      title: i18n('Aezeed Cipher Seed'),
+      message: i18n(
         'Seed for restoring on-chain ONLY funds. This seed has no knowledge of channel state. This is NOT a BIP-39 seed; As such it cannot be used to recover on-chain funds to any wallet other than LND.',
+      ),
       result: {
         type: 'single',
         value: aezeedCipherSeed
