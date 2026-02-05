@@ -1,4 +1,5 @@
 import { FileHelper, matches } from '@start9labs/start-sdk'
+import { sdk } from '../sdk'
 
 const { arrayOf, object, string, natural, boolean } = matches
 
@@ -21,7 +22,7 @@ export const customConfigShape = object({
 
 export const customConfigJson = FileHelper.json(
   {
-    volumeId: 'main',
+    base: sdk.volumes.main,
     subpath: '/custom-config.json',
   },
   customConfigShape,
