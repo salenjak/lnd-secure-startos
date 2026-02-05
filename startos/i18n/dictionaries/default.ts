@@ -29,6 +29,7 @@ const dict = {
 
   // action groups
   'Configuration': 22,
+  'Security': 1000,
 
   // actions/nodeInfo.ts
   'Node Info': 23,
@@ -46,7 +47,7 @@ const dict = {
   'Error fetching node info': 35,
 
   // actions/towerInfo.ts
-  'Watchtower Server Info': 36,
+  'Watchtower - Server Info': 36,
   'Get your Tower Server URL': 37,
   'Watchtower Server must be enabled': 38,
   'Tower Info': 39,
@@ -207,14 +208,14 @@ const dict = {
   'The ratio of the value in a non-time-sensitive (second-level) HTLC to allocate as the budget to pay fees when sweeping it.': 186,
 
   // actions/config/watchtowerServer.ts
-  'Watchtower Server': 65,
+  'Watchtower - Server': 65,
   'Enable Watchtower Server in lnd.conf': 66,
   'External Address': 187,
   'No available address at which your watchtower can be reached by LND peers.': 188,
   "Address at which your node can be reached by peers. Select 'none' to disable the watchtower server.": 189,
 
   // actions/config/watchtowerClient.ts
-  'Watchtower Client Settings': 67,
+  'Watchtower - Client': 67,
   'Edit the Watchtower Client settings in lnd.conf': 68,
   'Enable Watchtower Client': 190,
   'Enable or disable Watchtower Client': 191,

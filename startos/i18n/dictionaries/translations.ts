@@ -206,6 +206,7 @@ export default {
     201: '¿Cuánto tiempo debe intentar LND abrir la base de datos antes de rendirse?',
     202: 'Seleccionar puerta de enlace',
     203: 'Ninguno',
+    1000: 'Seguridad',
   },
   de_DE: {
     0: 'Starte LND!',
@@ -412,6 +413,7 @@ export default {
     201: 'Wie lange soll LND versuchen, die Datenbank zu öffnen, bevor es aufgibt?',
     202: 'Gateway auswählen',
     203: 'Keines',
+    1000: 'Sicherheit',
   },
   pl_PL: {
     0: 'Uruchamianie LND!',
@@ -618,6 +620,7 @@ export default {
     201: 'Jak długo LND powinien próbować otworzyć bazę danych przed rezygnacją?',
     202: 'Wybierz bramę',
     203: 'Brak',
+    1000: 'Segurança',
   },
   fr_FR: {
     0: 'Démarrage de LND !',
@@ -824,5 +827,6 @@ export default {
     201: "Combien de temps LND doit-il essayer d'ouvrir la base de données avant d'abandonner ?",
     202: 'Sélectionner la passerelle',
     203: 'Aucun',
+    1000: 'Sécurité',
   },
 } satisfies Record<string, LangDict>
