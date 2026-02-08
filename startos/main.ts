@@ -644,7 +644,7 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
       ready: {
         display: 'Wallet Status',
         fn: async () => {
-          const store = await storeJson.read().const(effects);
+          const store = await storeJson.read().once();
           const autoUnlockEnabled = store?.autoUnlockEnabled ?? false;
           const walletInitialized = store?.walletInitialized ?? false;
 
@@ -693,9 +693,8 @@ if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
   ready: {
     display: 'Security Status',
     fn: async () => {
-      const store = await storeJson.read().const(effects);
+      const store = await storeJson.read().once();
       const config = await customConfigJson.read().once();
-      const conf = (await lndConfFile.read().const(effects))!;
 
       const backupEnabled = config?.channelAutoBackupEnabled ?? false;
       const backupIcon = backupEnabled ? '🟢】' : '🔴】';
