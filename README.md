@@ -138,7 +138,7 @@ init/
 └── seedFiles.ts             # MODIFIED: Handles wallet state sync on upgrade/install
 
 /
-├── Dockerfile               # NEW: Wallet state (with backward-compatible schema using .catch())
+├── Dockerfile               # NEW: Custom image with rclone, mutt, inotify-tools, jq
 └── main.ts                  # MODIFIED: Added channel backup daemon and "Security status" health check
 ```
 ## Channels Backup Setup Examples
