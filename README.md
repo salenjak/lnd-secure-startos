@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon.svg" alt="LND Logo" width="21%">
+  <img src="icon.png" alt="LND Logo" width="21%">
 </p>
 
 # LND for StartOS — "Be Your Own <b>LOCKED</b> (this fork) / <b>UNLOCKED</b> (official version) Bank"
