@@ -1,24 +1,21 @@
-import { FileHelper, matches } from '@start9labs/start-sdk'
+import { FileHelper, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-const { arrayOf, object, string, natural, boolean } = matches
-
-export const shape = object({
-  restore: boolean,
-  aezeedCipherSeed: arrayOf(string).nullable(),
-  walletPassword: string.nullable(),
-  recoveryWindow: natural,
-  bitcoindSelected: boolean,
-  resetWalletTransactions: boolean,
-  watchtowers: arrayOf(string),
-  walletInitialized: boolean,
-  externalGateway: string.nullable().onMismatch(null),
-  pendingPasswordChange: string.nullable().onMismatch(null),
-  passwordChangeError: string.nullable().onMismatch(null),
-  autoUnlockEnabled: boolean.onMismatch(true),
-  seedBackupConfirmed: boolean.onMismatch(false),
-  passwordBackupConfirmed: boolean.onMismatch(false),
-seedBackupIndices: arrayOf(natural).nullable().onMismatch(null),})
+export const shape = z.object({
+  restore: z.boolean().catch(false),
+  aezeedCipherSeed: z.array(z.string()).nullable().catch(null),
+  walletPassword: z.string().nullable().catch(null),
+  resetWalletTransactions: z.boolean().catch(false),
+  recoveryWindow: z.number().catch(2500), 
+  walletInitialized: z.boolean().catch(false),
+  pendingPasswordChange: z.string().nullable().catch(null),
+  passwordChangeError: z.string().nullable().catch(null),
+  autoUnlockEnabled: z.boolean().catch(true),
+  seedBackupConfirmed: z.boolean().catch(false),
+  passwordBackupConfirmed: z.boolean().catch(false),
+  seedBackupIndices: z.array(z.number()).nullable().catch(null),
+  watchtowerClients: z.array(z.string()).catch([]), 
+})
 
 export const storeJson = FileHelper.json(
   {

@@ -88,7 +88,7 @@ export const confirmSeedBackup = sdk.Action.withInput(
       allowedStatuses: 'any',
       group: 'Security',
       visibility: store?.seedBackupConfirmed
-        ? { disabled: 'Aezeed Seed backup already confirmed' }
+        ? { disabled: 'Aezeed Seed backup confirmed' }
         : store?.walletInitialized
         ? 'enabled'
         : { disabled: 'Wallet not initialized' },
@@ -169,8 +169,9 @@ export const confirmSeedBackup = sdk.Action.withInput(
     console.log('Aezeed Cipher Seed backup confirmed')
     return {
       version: '1',
-      title: 'Seed Backup Confirmed',
-      message: 'Status: Confirmed',
+      title: 'Aezeed Cipher Seed',
+      message: `<hr><span class="g-card"><header>Status: BACKUP CONFIRMED <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiMwMGZmOGUiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjMDBmZjhlIj5saXN0LWFsdC1jaGVjazwvdGl0bGU+PHBhdGggZmlsbD0iIzAwZmY4ZSIgZD0iTTUgMjFxLS44MjUgMC0xLjQxMi0uNTg3VDMgMTlWNXEwLS44MjUuNTg4LTEuNDEyVDUgM2gxNHEuODI1IDAgMS40MTMuNTg4VDIxIDV2Ny43bC0zLjY1IDMuNjVsLTIuMTI1LTIuMTI1bC00LjI1IDQuMjI1bDIuNTUgMi41NXptNi04aDZ2LTJoLTZ6bTAtNGg2VjdoLTZ6bTYuMzUgMTNsLTMuNTUtMy41NWwxLjQyNS0xLjRsMi4xMjUgMi4xMjVsNC4yNS00LjI1TDIzIDE2LjM1em0tOC42MzgtOS4yODdROSAxMi40MjUgOSAxMnQtLjI4OC0uNzEyVDggMTF0LS43MTIuMjg4VDcgMTJ0LjI4OC43MTNUOCAxM3QuNzEzLS4yODhtMC00UTkgOC40MjYgOSA4dC0uMjg4LS43MTJUOCA3dC0uNzEyLjI4OFQ3IDh0LjI4OC43MTNUOCA5dC43MTMtLjI4OCIvPjwvc3ZnPg==" alt="list-alt-check" width="48" height="48">  </header>
+<h3 class="g-secondary"><br>&nbsp;&nbsp;Your "Aezeed Cipher Seed" backup has been successfully confirmed.<br><br></h3></span>`,
       result: null,
     }
   }
@@ -190,7 +191,7 @@ export const deleteCipherSeed = sdk.Action.withoutInput(
         ? store?.seedBackupConfirmed
           ? 'enabled'
           : { disabled: 'Seed backup not confirmed' }
-        : { disabled: 'Cipher Seed already deleted' },
+        : { disabled: 'Cipher Seed deleted' },
     }
   },
   async ({ effects }: { effects: Effects }) => {
@@ -198,8 +199,9 @@ export const deleteCipherSeed = sdk.Action.withoutInput(
     console.log('Aezeed Cipher Seed deleted from store.json')
     return {
       version: '1',
-      title: 'Seed Deleted',
-      message: 'Aezeed Cipher Seed has been deleted from store.json.',
+      title: 'Aezeed Cipher Seed',
+      message: `<hr><span class="g-card"><header>Status: DELETED<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHN0cm9rZT0iI2ZmMDA1NyI+PHRpdGxlIHhtbG5zPSIiIHN0cm9rZT0iI2ZmMDA1NyI+bGlzdC1jcm9zcy1taW5pbWFsaXN0aWMtbGluZS1kdW90b25lPC90aXRsZT48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmZjAwNTciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiPjxwYXRoIGQ9Ik0yMCA2SDNtOCA1SDNtOCA1SDMiIG9wYWNpdHk9Ii41IiBzdHJva2U9IiNmZjAwNTciLz48cGF0aCBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJtMTUgMTZsNS01bTAgNWwtNS01IiBzdHJva2U9IiNmZjAwNTciLz48L2c+PC9zdmc+" alt="list-cross-minimalistic-line-duotone" width="48" height="48">  </header>
+<h3 class="g-secondary"><br>&nbsp;&nbsp;Your "Aezeed Cipher Seed" has been deleted from the server. By removing the seed from the server and setting <strong>Wallet Auto-Unlock: DISABLED</strong>, your Bitcoin funds will be protected from being extracted if the server is compromised remotely or stolen.<br><br></h3></span>`,
       result: null,
     }
   },

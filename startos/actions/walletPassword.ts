@@ -2,10 +2,8 @@ import { storeJson } from '../fileModels/store.json'
 import { sdk } from '../sdk'
 import type { Effects } from '@start9labs/start-sdk/base/lib/types'
 import { lndDataDir, mainMounts } from '../utils'
-import { lndConfFile } from '../fileModels/lnd.conf'
 
 const { InputSpec, Value } = sdk
-
 
 type ManualUnlockInput = {
   password: string
@@ -42,7 +40,7 @@ export const manualWalletUnlock = sdk.Action.withInput(
     }
 
     const walletPasswordBase64 = Buffer.from(password, 'utf8').toString('base64')
-    console.log('Unlocking wallet with provided password (base64):************************')//, walletPasswordBase64)
+    console.log('Unlocking wallet with provided password (base64):************************')
 
     try {
       const res = await sdk.SubContainer.withTemp(
@@ -81,8 +79,9 @@ export const manualWalletUnlock = sdk.Action.withInput(
         console.log('Wallet unlocked successfully via manual action.')
         return {
           version: '1',
-          title: 'Wallet Unlocked',
-          message: 'Wallet has been successfully unlocked with the provided password.',
+          title: `LND Wallet`,
+          message: `<hr><span class="g-card"><header>Status: UNLOCKED <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiMwMGZmOGUiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjMDBmZjhlIj5zaGllbGQtdW5sb2NrZWQtb3V0bGluZTwvdGl0bGU+PHBhdGggZmlsbD0iIzAwZmY4ZSIgZD0iTTIxIDExYzAgNS41LTMuOCAxMC43LTkgMTJjLTUuMi0xLjMtOS02LjUtOS0xMlY1bDktNGw5IDR6bS05IDEwYzMuOC0xIDctNS41IDctOS44VjYuM2wtNy0zLjFsLTcgMy4xdjQuOWMwIDQuMyAzLjIgOC44IDcgOS44bTIuOC0xMGgtNC4zVjguNWMwLS44LjctMS4zIDEuNS0xLjNzMS41LjUgMS41IDEuM1Y5aDEuM3YtLjVDMTQuOCA3LjEgMTMuNCA2IDEyIDZTOS4yIDcuMSA5LjIgOC41VjExYy0uNiAwLTEuMi42LTEuMiAxLjJ2My41YzAgLjcuNiAxLjMgMS4yIDEuM2g1LjVjLjcgMCAxLjMtLjYgMS4zLTEuMnYtMy41YzAtLjctLjYtMS4zLTEuMi0xLjMiLz48L3N2Zz4=" alt="shield-unlocked-outline" width="32" height="32"></header>
+        <h3 class="g-secondary"><br><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiNmZmIxMDAiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjZmZiMTAwIj5zdG9wd2F0Y2gtZHVvdG9uZTwvdGl0bGU+PHBhdGggZmlsbD0iI2ZmYjEwMCIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNOS43NSAyLjVhLjc1Ljc1IDAgMCAxIC43NS0uNzVoM2EuNzUuNzUgMCAwIDEgMCAxLjVoLS43NXYxLjUzMmE4LjcgOC43IDAgMCAxIDQuODg0IDIuMDIzbC44MzYtLjgzNWEuNzUuNzUgMCAxIDEgMS4wNiAxLjA2bC0uODM1LjgzNmE4Ljc1IDguNzUgMCAxIDEtNy40NDUtMy4wODRWMy4yNWgtLjc1YS43NS43NSAwIDAgMS0uNzUtLjc1TTEyIDYuMjVhNy4yNSA3LjI1IDAgMSAwIDAgMTQuNWE3LjI1IDcuMjUgMCAwIDAgMC0xNC41IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBmaWxsPSIjZmZiMTAwIiBkPSJNMTIgNy43NWE1Ljc1IDUuNzUgMCAxIDAgNC45OCA4LjYyNUwxMiAxMy41eiIgb3BhY2l0eT0iLjUiLz48L3N2Zz4=" alt="stopwatch-duotone" height="32" width="32">&nbsp;&nbsp;Your wallet is ready to use. Health checks will update "Wallet Status" within 30 seconds.<br><br></h3></span>`,
           result: null,
         }
       } else {
@@ -170,186 +169,60 @@ export const walletPassword = sdk.Action.withInput(
     }
   },
   async ({ effects, input }: { effects: Effects; input: Input }) => {
-  const { currentPassword, newPassword, confirmPassword } = input
-  const store = await storeJson.read().const(effects)
+    const { currentPassword, newPassword, confirmPassword } = input
+    const store = await storeJson.read().const(effects)
 
-  if (!store) throw new Error('Store not initialized.')
+    if (!store) throw new Error('Store not initialized.')
 
-  const walletInitialized = store.walletInitialized ?? false
-  const autoUnlockEnabled = store.autoUnlockEnabled ?? false
+    const walletInitialized = store.walletInitialized ?? false
+    const autoUnlockEnabled = store.autoUnlockEnabled ?? false
 
-  if (!walletInitialized) {
     if (newPassword !== confirmPassword) throw new Error('New passwords do not match.')
     if (!newPassword || newPassword.length < 8) throw new Error('New password must be at least 8 characters.')
 
-    await storeJson.merge(effects, {
-      walletPassword: newPassword, 
-      pendingPasswordChange: null,
-      passwordChangeError: null,
-    })
-
-    return {
-      version: '1',
-      title: 'Initial Password Set',
-      message: 'Initial wallet password has been set.',
-      result: null,
-    }
-  }
-
-  if (newPassword !== confirmPassword) throw new Error('New passwords do not match.')
-  if (!newPassword || newPassword.length < 8) throw new Error('New password must be at least 8 characters.')
-
-  if (autoUnlockEnabled && store.walletPassword) {
-    if (currentPassword !== store.walletPassword) {
-      throw new Error('Current password is incorrect.')
-    }
-  }
-
-  const encodedNewPassword = Buffer.from(newPassword, 'utf8').toString('base64')
-
-  try {
-    const wasAutoUnlockDisabled = !autoUnlockEnabled
-    
-    await storeJson.merge(effects, {
-      walletPassword: currentPassword,           // ← plaintext
-      pendingPasswordChange: encodedNewPassword, // ← base64 (required by main.ts)
-      autoUnlockEnabled: true,
-      passwordChangeError: null,
-      passwordBackupConfirmed: false,
-    })
-
-    await sdk.restart(effects)
-
-    let message = 'Password change initiated. The service is restarting...'
-    if (wasAutoUnlockDisabled) {
-      message += ' Auto-unlock was temporarily enabled. Disable it again after confirming the new password works.'
-    }
-
-    return { version: '1', title: 'Password Change Initiated', message, result: null }
-  } catch (err) {
-    console.error('Error initiating password change:', err)
-    await storeJson.merge(effects, {
-      pendingPasswordChange: null,
-      walletPassword: store.walletPassword, // restore original plaintext
-      autoUnlockEnabled,
-      passwordChangeError: (err as Error).message || String(err),
-    })
-    throw new Error(`Failed to initiate password change: ${(err as Error).message}`)
-  }
-}
-)
-
-
-type DisableAutoUnlockInput = {
-  autoUnlockEnabled: boolean
-  walletPasswordInput?: string | null
-}
-
-export const disableAutoUnlock = sdk.Action.withInput(
-  'wallet-auto-unlock',
-  async ({ effects }: { effects: Effects }) => {
-    const store = await storeJson.read().const(effects)
-    const currentState = store?.autoUnlockEnabled ?? true
-    const walletPasswordExists = !!store?.walletPassword
-
-    let actionName = ''
-    let actionDescription = ''
-    let actionWarning = ''
-
-    if (currentState) {
-      actionName = 'Disable Auto-Unlock Wallet'
-      actionDescription = 'Status: ENABLED | Disable auto-unlocking of the LND wallet on startup.'
-      actionWarning = 'Disabling auto-unlock will delete your password from store.json and require manual unlocking via lncli when starting LND.'
-    } else {
-      actionName = 'Enable Auto-Unlock Wallet'
-      actionDescription = 'Status: DISABLED | Enable auto-unlocking of the LND wallet on startup.'
-      if (walletPasswordExists) {
-        actionWarning = 'Enabling auto-unlock. The wallet password is already present on the server.'
-      } else {
-        actionWarning = 'Enabling auto-unlock requires the wallet password to be present on the server. Please enter it below if needed.'
+    if (autoUnlockEnabled && store.walletPassword) {
+      if (currentPassword !== store.walletPassword) {
+        throw new Error('Current password is incorrect.')
       }
     }
 
-    return {
-      name: actionName,
-      description: actionDescription,
-      warning: actionWarning,
-      allowedStatuses: 'any',
-      group: 'Security',
-      visibility: 'enabled',
-    }
-  },
-  InputSpec.of({
-    autoUnlockEnabled: Value.toggle({
-      name: 'Auto-Unlock Wallet',
-      description: 'Enable or disable auto-unlocking of the wallet on startup.',
-      default: true,
-    }),
-    walletPasswordInput: Value.text({
-      name: 'Wallet Password (if enabling)',
-      description: 'Enter your wallet password if enabling auto-unlock and it\'s not already stored.',
-      required: false,
-      masked: true,
-      default: null,
-    }),
-  }),
-  async ({ effects }) => {
-    const store = await storeJson.read().const(effects)
-    return {
-      autoUnlockEnabled: store?.autoUnlockEnabled ?? true,
-      walletPasswordInput: null,
-    }
-  },
-  async ({ effects, input }: { effects: Effects; input: DisableAutoUnlockInput }) => {
-    const store = await storeJson.read().const(effects)
-    const currentState = store?.autoUnlockEnabled ?? true
-    const walletPasswordExists = !!store?.walletPassword
+    const encodedNewPassword = Buffer.from(newPassword, 'utf8').toString('base64')
 
-    if (!input.autoUnlockEnabled && !store?.passwordBackupConfirmed) {
-      throw new Error('Password backup must be confirmed before disabling auto-unlock.')
-    }
-
-    if (!input.autoUnlockEnabled) {
+    try {
+      const wasAutoUnlockDisabled = !autoUnlockEnabled
+      
       await storeJson.merge(effects, {
-        autoUnlockEnabled: false,
-        walletPassword: null,
+        walletPassword: currentPassword,           
+        pendingPasswordChange: encodedNewPassword, 
+        autoUnlockEnabled: true,
+        passwordChangeError: null,
         passwordBackupConfirmed: false,
       })
-      console.log('Auto-unlock disabled. Password cleared from store.json.')
-      return {
-        version: '1',
-        title: 'Auto-Unlock Disabled',
-        message: 'Auto-unlock has been disabled. Password has been deleted from store.json. You will need to manually unlock the wallet on startup.',
-        result: null,
-      }
-    } else {
-      let passwordToUse = store?.walletPassword
-
-      if (input.walletPasswordInput != null && input.walletPasswordInput.trim() !== '') {
-        console.log('Password provided in input. Encoding and storing.')
-        const encodedInputPassword = Buffer.from(input.walletPasswordInput.trim(), 'utf8').toString('base64')
-        await storeJson.merge(effects, {
-          walletPassword: encodedInputPassword,
-        })
-        passwordToUse = encodedInputPassword
-      }
-
-      if (!passwordToUse) {
-        throw new Error('Cannot enable auto-unlock: No wallet password found in store.json and none provided. Please enter the password.')
-      }
-
-      await storeJson.merge(effects, { autoUnlockEnabled: true })
-      console.log('Auto-unlock enabled in store.json.')
 
       await sdk.restart(effects)
 
-      const msgSuffix = (input.walletPasswordInput != null && input.walletPasswordInput.trim() !== '') ? ' The provided password has been stored.' : ''
-      return {
+      let message = 'Password change initiated. The service is restarting...'
+      if (wasAutoUnlockDisabled) {
+        message += ' Auto-unlock was temporarily enabled. Disable it again after confirming the new password works.'
+      }
+
+return {
         version: '1',
-        title: 'Auto-Unlock Enabled',
-        message: `Auto-unlock has been enabled. The wallet will unlock automatically on startup using the stored password. The service is restarting to apply changes.${msgSuffix}`,
+        title: 'Wallet Password',
+        message: `<hr><span class="g-card"><header>Status: CHANGED <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHN0cm9rZT0iIzAwZmY4YSI+PHRpdGxlIHhtbG5zPSIiIHN0cm9rZT0iIzAwZmY4YSI+cGFzc3dvcmQtY2hlY2s8L3RpdGxlPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwZmY4YSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIxIDEzVjhhMiAyIDAgMCAwLTItMkg1YTIgMiAwIDAgMC0yIDJ2NmEyIDIgMCAwIDAgMiAyaDdtMi41IDIuNWwyIDJsNC00TTEyIDExLjAxbC4wMS0uMDExbTMuOTkuMDExbC4wMS0uMDExTTggMTEuMDFsLjAxLS4wMTEiLz48L3N2Zz4=" alt="password-check" width="48" height="48"></header>
+        <h3 class="g-secondary"><br>&nbsp;&nbsp;New wallet password will be set after LND (re)start.<br><br></h3></span>`,
         result: null,
       }
+        } catch (err) {
+      console.error('Error initiating password change:', err)
+      await storeJson.merge(effects, {
+        pendingPasswordChange: null,
+        walletPassword: store.walletPassword, 
+        autoUnlockEnabled,
+        passwordChangeError: (err as Error).message || String(err),
+        passwordBackupConfirmed: store.passwordBackupConfirmed, 
+                })
+      throw new Error(`Failed to initiate password change: ${(err as Error).message}`)
     }
-  },
+  }
 )

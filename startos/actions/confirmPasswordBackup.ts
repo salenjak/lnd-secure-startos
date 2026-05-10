@@ -18,11 +18,13 @@ export const confirmPasswordBackup = sdk.Action.withInput(
       warning: 'Ensure you have securely backed up your password before confirming.',
       allowedStatuses: 'any',
       group: 'Security',
-      visibility: store?.passwordBackupConfirmed
-        ? { disabled: 'Password backup already confirmed' }
-        : store?.walletPassword
-        ? 'enabled'
-        : { disabled: 'Wallet password not set' },
+      visibility: store?.pendingPasswordChange
+  ? { disabled: 'Password change in progress. Please wait for LND to (re)start and apply the new password.' }
+  : store?.passwordBackupConfirmed
+  ? { disabled: 'Password backup confirmed' }
+  : store?.walletPassword
+  ? 'enabled'
+  : { disabled: 'Wallet password not set' },
     }
   },
   InputSpec.of({
@@ -52,12 +54,13 @@ export const confirmPasswordBackup = sdk.Action.withInput(
     if (password !== store.walletPassword) {
     throw new Error('Password does not match.')
     }
-    await storeJson.merge(effects, { passwordBackupConfirmed: true }, { allowRestart: false } as any)
+await storeJson.merge(effects, { passwordBackupConfirmed: true })
     console.log('Password backup confirmed')
     return {
       version: '1',
-      title: 'Password Backup Confirmed',
-      message: 'Status: ✅ Confirmed',
+      title: 'Wallet Password',
+      message: `<hr><span class="g-card"><header>Status: BACKUP CONFIRMED <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHN0cm9rZT0iIzAwZmY4YSI+PHRpdGxlIHhtbG5zPSIiIHN0cm9rZT0iIzAwZmY4YSI+cGFzc3dvcmQtY2hlY2s8L3RpdGxlPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwZmY4YSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIxIDEzVjhhMiAyIDAgMCAwLTItMkg1YTIgMiAwIDAgMC0yIDJ2NmEyIDIgMCAwIDAgMiAyaDdtMi41IDIuNWwyIDJsNC00TTEyIDExLjAxbC4wMS0uMDExbTMuOTkuMDExbC4wMS0uMDExTTggMTEuMDFsLjAxLS4wMTEiLz48L3N2Zz4=" alt="password-check" width="48" height="48">  </header>
+<h3 class="g-secondary"><br>Your password backup has been successfully confirmed.<br><br></h3></span>`,
       result: null,
     }
   },

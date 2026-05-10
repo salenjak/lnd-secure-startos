@@ -1,22 +1,26 @@
-import { sdk } from '../sdk'
-import { setDependencies } from '../dependencies'
-import { setInterfaces } from '../interfaces'
-import { versionGraph } from '../install/versionGraph'
 import { actions } from '../actions'
 import { restoreInit } from '../backups'
-import { watchHosts } from './watchHosts'
+import { setDependencies } from '../dependencies'
+import { versionGraph } from '../versions'
+import { setInterfaces } from '../interfaces'
+import { sdk } from '../sdk'
+import { seedFiles } from './seedFiles'
 import { setupCerts } from './setupCerts'
-import { taskSetBackend } from './taskSetBackend'
+import { tasksOnInstall } from './tasksOnInstall'
+import { watchHosts } from './watchHosts'
+import { watchTorSocks } from './watchTorSocks'
 
 export const init = sdk.setupInit(
   restoreInit,
-  setupCerts,
   versionGraph,
+  seedFiles,
   setInterfaces,
   setDependencies,
   actions,
+  setupCerts,
   watchHosts,
-  taskSetBackend,
+  watchTorSocks,
+  tasksOnInstall,
 )
 
 export const uninit = sdk.setupUninit(versionGraph)

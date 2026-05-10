@@ -12,7 +12,6 @@ export const manualBackup = sdk.Action.withoutInput(
     visibility: 'enabled',
   }),
   async ({ effects }) => {
-
     const res = await sdk.SubContainer.withTemp(
       effects,
       { imageId: 'lnd' },

@@ -70,3 +70,19 @@ export const long = {
   fr_FR:
     "Lightning Network Daemon (LND) est entièrement conforme à la spécification du réseau Lightning (BOLTs). BOLT signifie : Basis of Lightning Technology. Dans son état actuel, LND est capable de : créer des canaux, fermer des canaux, gérer tous les états de canaux (y compris les exceptionnels !), maintenir un graphe de canaux entièrement authentifié et validé, effectuer la recherche de chemin dans le réseau, transférer passivement les paiements entrants, envoyer des paiements sortants chiffrés en oignon à travers le réseau, mettre à jour les grilles tarifaires annoncées et la gestion automatique des canaux (autopilot).",
 }
+
+export const depBitcoindDescription = {
+  en_US: 'Used to subscribe to new block events.',
+  es_ES: 'Utilizado para suscribirse a eventos de nuevos bloques.',
+  de_DE: 'Wird verwendet, um neue Block-Ereignisse zu abonnieren.',
+  pl_PL: 'Używany do subskrybowania wydarzeń nowych bloków.',
+  fr_FR: "Utilisé pour s'abonner aux événements de nouveaux blocs.",
+}
+
+export const depTorDescription = {
+  en_US: 'Required when "Use Tor for all traffic" is enabled.',
+  es_ES: 'Requerido cuando "Usar Tor para todo el tráfico" está habilitado.',
+  de_DE: 'Erforderlich, wenn "Tor für allen Datenverkehr verwenden" aktiviert ist.',
+  pl_PL: 'Wymagane, gdy "Używaj Tor do całego ruchu" jest włączone.',
+  fr_FR: "Requis lorsque \"Utiliser Tor pour tout le trafic\" est activé.",
+}

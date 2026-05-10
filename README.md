@@ -338,32 +338,35 @@ A complete implementation of a Lightning Network node by [Lightning Labs](https:
 
 ## Image and Container Runtime
 
-| Property | Value |
-|----------|-------|
-| Image | `lightninglabs/lnd:v0.20.0-beta` (upstream, unmodified) |
-| Architectures | x86_64, aarch64 |
-| Entrypoint | `lnd` (default upstream) |
+| Property      | Value                                    |
+| ------------- | ---------------------------------------- |
+| Image         | `lightninglabs/lnd` (upstream, unmodified) |
+| Architectures | x86_64, aarch64                          |
+| Entrypoint    | `lnd` (default upstream)                 |
 
 ## Volume and Data Layout
 
-| Volume | Mount Point | Purpose |
-|--------|-------------|---------|
+| Volume | Mount Point  | Purpose                                     |
+| ------ | ------------ | ------------------------------------------- |
 | `main` | `/root/.lnd` | All LND data (wallet, channels, DB, config) |
 
 StartOS-specific files on the `main` volume:
 
-| File | Purpose |
-|------|---------|
-| `store.json` | Persistent StartOS state (wallet password, cipher seed, flags) |
-| `tls.cert` / `tls.key` | StartOS-managed TLS certificates |
+| File                   | Purpose                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `store.json`           | Persistent StartOS state (wallet password, restore flag, watchtower clients) |
+| `tls.cert` / `tls.key` | StartOS-managed TLS certificates                                            |
+| `lnd.conf`             | LND configuration (managed by StartOS actions)                               |
 
 If using the `bitcoind` backend, the Bitcoin Core `main` volume is mounted read-only at `/mnt/bitcoin` for cookie authentication.
 
 ## Installation and First-Run Flow
 
-1. On install, StartOS creates a **critical task** prompting the user to select a Bitcoin backend (local Bitcoin node or Neutrino)
+1. On install, StartOS creates two **critical tasks**:
+   - **Select a Bitcoin backend** (local Bitcoin Core or Neutrino)
+   - **Initialize wallet** (start fresh, or migrate from Umbrel 1.x or another StartOS server)
 2. TLS certificates are generated using StartOS's certificate system
-3. A wallet is **automatically initialized** — StartOS generates a new wallet via the LND `/v1/genseed` and `/v1/initwallet` API, storing the Aezeed cipher seed and wallet password in `store.json`
+3. The **Initialize Wallet** action generates a new wallet via the LND `/v1/genseed` and `/v1/initwallet` API. The 24-word Aezeed mnemonic is displayed **once** in the action result — it is **not stored**. The wallet password is saved to `store.json`
 4. The wallet is **automatically unlocked** on every start via the `/v1/unlockwallet` API
 5. If a Bitcoin Core backend is selected, StartOS creates a task on Bitcoin Core to **enable ZMQ**
 
@@ -373,76 +376,193 @@ Users never interact with `lncli create` or `lncli unlock` — StartOS handles b
 
 LND is configured entirely through **StartOS actions** (see [Actions](#actions-startos-ui) below). Each configuration category has a dedicated action that writes to the `lnd.conf` file on the `main` volume.
 
-| StartOS-Managed (via Actions) | Details |
-|-------------------------------|---------|
-| Bitcoin backend selection | `bitcoind` or `neutrino` |
-| General settings | Alias, color, debug level, keysend, AMP, routing, channel sizes |
-| Bitcoin channel settings | Base fee, fee rate, timelock delta, min HTLC, confirmations |
-| Autopilot | Enable/disable, max channels, allocation, channel size limits |
-| Watchtower server | Enable/disable, listen address |
-| Watchtower client | Enable/disable, tower URIs |
-| Protocol options | Wumbo channels, anchors, taproot channels, zero-conf, SCID alias |
-| Sweeper settings | Max fee rate, budget ratios, confirmation targets |
-| DB/Bolt settings | Auto-compact, freelist sync, timeouts |
-| External gateway | Public IP or domain for inbound connections |
+| StartOS-Managed (via Actions) | Details                                                                |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Bitcoin backend selection     | `bitcoind` or `neutrino`                                               |
+| General settings              | Alias, color, keysend, AMP, tor-only mode                             |
+| Routing fees                  | Base fee, fee rate, timelock delta                                     |
+| Channel settings              | Min/max size, wumbo, zero-conf, SCID alias, pending, circular route, closes |
+| Autopilot                     | Enable/disable, max channels, allocation, channel size limits          |
+| Performance                   | DB auto-compact, invoice cleanup, reconnect stagger, graph pruning     |
+| Watchtower server             | Enable/disable, listen address                                         |
+| Watchtower client             | Enable/disable, tower URIs                                             |
 
 Settings **not** managed by StartOS (hardcoded):
 
-| Setting | Value | Reason |
-|---------|-------|--------|
-| `bitcoin.mainnet` | `true` | Only mainnet supported |
-| `tor.active` | `true` | Always routed through Tor |
-| `bitcoind.rpchost` | `bitcoind.startos:8332` | StartOS service networking |
-| `bitcoind.rpccookie` | `/mnt/bitcoin/.cookie` | Cookie auth via mounted volume |
-| `healthcheck.chainbackend.attempts` | `0` | Managed by StartOS health checks |
+| Setting                             | Value                   | Reason                           |
+| ----------------------------------- | ----------------------- | -------------------------------- |
+| `bitcoin.mainnet`                   | `true`                  | Only mainnet supported           |
+| `tor.active`                        | `true`                  | Always routed through Tor        |
+| `rpclisten`                         | `0.0.0.0:10009`         | Fixed gRPC listen address        |
+| `restlisten`                        | `0.0.0.0:8080`          | Fixed REST listen address        |
+| `listen`                            | `0.0.0.0:9735`          | Fixed peer listen address        |
+| `rpcmiddleware.enable`              | `true`                  | Required for StartOS integration |
+| `bitcoind.rpchost`                  | `bitcoind.startos:8332` | StartOS service networking       |
+| `bitcoind.rpccookie`                | `/mnt/bitcoin/.cookie`  | Cookie auth via mounted volume   |
+| `healthcheck.chainbackend.attempts` | `0`                     | Managed by StartOS health checks |
+
+### Default Overrides
+
+Only settings that **diverge from upstream LND defaults** are written to `lnd.conf` on install. All other settings are left unset, allowing LND to use its built-in defaults. This keeps `lnd.conf` minimal and avoids drift when upstream defaults change between versions.
+
+| Setting                               | Upstream Default   | Our Default             | Reason                                                                                   |
+| ------------------------------------- | ------------------ | ----------------------- | ---------------------------------------------------------------------------------------- |
+| `accept-keysend`                      | Disabled           | Enabled                 | Keysend is widely expected by wallets and apps that interact with LND nodes              |
+| `tor.skip-proxy-for-clearnet-targets` | `false` (tor-only) | `true` (allow clearnet) | Better performance by default; users can opt into tor-only via "Use Tor for all traffic" |
+
+### Form Defaults and Footnotes
+
+Configuration actions use a consistent pattern across number, text, and boolean fields:
+
+- **`default: null`** — the field is empty (for numbers/text) or set to the middle "—" state (for tri-state booleans); if the user saves without changing the value, the key is omitted from `lnd.conf` and LND uses its upstream default
+- **`footnote: "Default: <value>"`** — shows the upstream LND default persistently beneath the field, so the user knows what value applies when the field is left unset
+- **`default: <value>`** — used only when we intentionally override the upstream default (e.g. `accept-keysend: true`); "reset defaults" restores our override, not the upstream value
+- Optional booleans use `Value.triState` (true / false / null) rather than `Value.toggle` so the "null" middle state maps cleanly to "use the upstream default"
 
 ## Network Access and Interfaces
 
-| Interface | Port | Protocol | Purpose |
-|-----------|------|----------|---------|
-| REST (LND Connect) | 8080 | HTTPS | REST API, `lndconnect://` URIs |
-| gRPC (LND Connect) | 10009 | HTTPS | gRPC API, `lndconnect://` URIs |
-| Peer | 9735 | TCP (raw) | Lightning peer-to-peer connections |
-| Watchtower | 9911 | TCP (raw) | Watchtower server (when enabled) |
+| Interface          | Port  | Protocol  | Purpose                            |
+| ------------------ | ----- | --------- | ---------------------------------- |
+| REST (LND Connect) | 8080  | HTTPS     | REST API, `lndconnect://` URIs     |
+| gRPC (LND Connect) | 10009 | HTTPS     | gRPC API, `lndconnect://` URIs     |
+| Peer               | 9735  | TCP (raw) | Lightning peer-to-peer connections |
+| Watchtower         | 9911  | TCP (raw) | Watchtower server (when enabled)   |
 
 The REST and gRPC interfaces export `lndconnect://` URIs with embedded macaroon credentials. The watchtower interface is only exposed when the watchtower server is enabled in configuration.
 
+### External Address Advertisement
+
+StartOS automatically manages how LND advertises itself to the Lightning Network. Addresses are resolved in the following priority order:
+
+1. **Tor onion addresses** — always added to `externalip`
+2. **Public domains** — if not using tor-only mode, added to `externalhosts`
+3. **IPv4 addresses** — used as a fallback in `externalip` only when no public domains are available
+
+This means LND can advertise via domain names (not just raw IPs) when the node has a public domain configured in StartOS.
+
 ## Actions (StartOS UI)
 
-### Information
+### Node Info
 
-| Action | Purpose | Availability | Inputs |
-|--------|---------|-------------|--------|
-| **Node Info** | Display node alias, pubkey, and peer URI(s) | Running only | None |
-| **Aezeed Cipher Seed** | Display the wallet's Aezeed mnemonic seed | Any (disabled if no seed stored) | None |
-| **Watchtower Server Info** | Display watchtower URI for sharing | Running only (disabled if watchtower inactive) | None |
+- **Name:** Node Info
+- **Purpose:** Display node alias, pubkey, and peer URI(s)
+- **Visibility:** Enabled
+- **Availability:** Running only
+- **Inputs:** None
+- **Outputs:** Node alias (copyable), node ID (masked, copyable), node URI(s) (masked, copyable, QR)
 
-### Configuration
+### Watchtower Server Info
 
-| Action | Purpose | Availability |
-|--------|---------|-------------|
-| **General Settings** | Alias, color, debug level, keysend, AMP, routing, channel sizes, fees | Any |
-| **Bitcoin Backend** | Select `bitcoind` or `neutrino` | Any |
-| **Bitcoin Channel Config** | Default confirmations, HTLC limits, base fee, fee rate, timelock | Any |
-| **Autopilot** | Enable/configure automatic channel management | Any |
-| **Watchtower Server** | Enable/configure watchtower server | Any |
-| **Watchtower Client** | Enable/configure watchtower client, add tower URIs | Any |
-| **Protocol Options** | Wumbo, anchors, taproot channels, zero-conf, SCID alias | Any |
-| **Sweeper** | Fee rate limits and budget ratios | Any |
-| **DB/Bolt** | Auto-compact, freelist sync, timeouts | Any |
-| **External Gateway** | Set a public IP or domain for inbound peering | Any |
+- **Name:** Watchtower Server Info
+- **Purpose:** Display watchtower URI for sharing with peers
+- **Visibility:** Conditional — disabled if watchtower server is not active
+- **Availability:** Running only
+- **Inputs:** None
+- **Outputs:** Tower URI (masked, copyable, QR)
 
-### Maintenance
+### General Settings
 
-| Action | Purpose | Availability | Warning |
-|--------|---------|-------------|---------|
-| **Reset Wallet Transactions** | Rescan on-chain transactions from wallet birthday | Any | None |
-| **Recreate Macaroons** | Delete and regenerate all macaroon files | Any | May require restarting dependent services |
-| **Import from Umbrel (1.x)** | Migrate wallet and channel data from Umbrel 1.x | Stopped only (disabled if wallet exists) | Never restart Umbrel with the same seed |
+- **Name:** General Settings
+- **Purpose:** Configure alias, color, keysend, AMP, tor-only mode
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Alias (text, max 32 chars), color (hex), accept-keysend (tri-state, default: true), accept-amp (tri-state, default: null), use-tor-only (tri-state, default: false)
+- **Outputs:** None
+
+### Routing Fees
+
+- **Name:** Routing Fees
+- **Purpose:** Configure default fees and timelock delta for forwarded payments
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Base fee (millisatoshi), fee rate (sats per million), timelock delta (blocks, min 18, max 2016)
+- **Outputs:** None
+
+### Channel Settings
+
+- **Name:** Channel Settings
+- **Purpose:** Configure channel acceptance policies including size limits, pending channel limits, and close behavior
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Default channel confirmations, min/max channel size, wumbo channels (tri-state), option-scid-alias (tri-state), zero-conf (tri-state), max pending channels, allow circular route (tri-state), reject push (tri-state), coop close target (blocks)
+- **Outputs:** None
+
+### Autopilot Settings
+
+- **Name:** Autopilot Settings
+- **Purpose:** Enable/configure automatic channel management
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Enable/disable union; when enabled: max channels, allocation (0–100%), min/max channel size, private (tri-state), min confirmations, confirmation target
+- **Outputs:** None
+
+### Bitcoin Backend
+
+- **Name:** Bitcoin Backend
+- **Purpose:** Select `bitcoind` or `neutrino` as the chain backend
+- **Visibility:** Hidden (triggered as critical task on install)
+- **Availability:** Any status
+- **Inputs:** Select: bitcoind or neutrino
+- **Outputs:** None
+
+### Performance
+
+- **Name:** Performance
+- **Purpose:** Database compaction, invoice cleanup, and network efficiency settings
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Auto-compact (tri-state), GC canceled invoices on startup (tri-state), GC canceled invoices live (tri-state), stagger initial reconnect (tri-state), ignore historical gossip (tri-state), strict graph pruning (tri-state)
+- **Outputs:** None
+
+### Watchtower Server
+
+- **Name:** Watchtower Server
+- **Purpose:** Enable/configure the watchtower server and select the external address to advertise
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** External IP selection (from available peer interface public addresses, or "none" to disable)
+- **Outputs:** None
+
+### Watchtower Client Settings
+
+- **Name:** Watchtower Client Settings
+- **Purpose:** Enable/configure watchtower client and add tower URIs
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** Enable/disable union; when enabled: list of watchtower URIs (`pubkey@host:9911`)
+- **Outputs:** None
+
+### Initialize Wallet
+
+- **Name:** Initialize Wallet
+- **Purpose:** Create a new wallet or migrate from Umbrel 1.x / another StartOS server
+- **Visibility:** Hidden (triggered as critical task on install)
+- **Availability:** Stopped only
+- **Inputs:** Select variant: "Start Fresh" (no inputs), "Migrate from Umbrel" (host + password), or "Migrate from StartOS" (host + master password)
+- **Outputs:** For fresh: 24-word Aezeed mnemonic (masked, copyable — shown once, not stored). For migration: success/failure message
+
+### Reset Wallet Transactions
+
+- **Name:** Reset Wallet Transactions
+- **Purpose:** Rescan on-chain transactions from wallet birthday; useful for picking up missed transactions
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** None
+- **Outputs:** None (restarts LND with `--reset-wallet-transactions`)
+
+### Recreate Macaroons
+
+- **Name:** Recreate Macaroons
+- **Purpose:** Delete and regenerate all macaroon files
+- **Visibility:** Enabled
+- **Availability:** Any status
+- **Inputs:** None
+- **Outputs:** None
+- **Warning:** May require restarting dependent services
 
 ## Backups and Restore
 
-**Backed up:** The entire `main` volume, **excluding** `data/graph` (the network graph cache, which is rebuilt automatically).
+**Backed up:** The entire `main` volume, **excluding** files that are rebuilt automatically: `data/graph`, `data/chain/bitcoin/mainnet/channel.db`, `data/chain/bitcoin/mainnet/sphinxreplay.db`, `data/chain/bitcoin/mainnet/neutrino.db`, `data/chain/bitcoin/mainnet/block_headers.bin`, `data/chain/bitcoin/mainnet/reg_filter_headers.bin`, and `logs`.
 
 **Restore behavior:** After restore, LND automatically runs `restorechanbackup` to request force-close of all channels from the Static Channel Backup. A persistent health check warning is displayed advising the user to sweep funds and reinstall LND fresh.
 
@@ -450,20 +570,25 @@ The REST and gRPC interfaces export `lndconnect://` URIs with embedded macaroon 
 
 ## Health Checks
 
-| Check | Method | Messages |
-|-------|--------|----------|
-| **REST Interface** | Port listening (8080) | Ready: "The REST interface is ready to accept connections" |
-| **Network and Graph Sync** | `lncli getinfo` (synced_to_chain + synced_to_graph) | Synced / Syncing to chain / Syncing to graph / Starting |
-| **Node Reachability** | Config check (conditional) | Disabled message if no external IP/hosts configured |
-| **Backup Restoration** | Conditional (after restore) | Warning to sweep funds and reinstall |
+| Check                      | Method                                                               | Grace Period | Messages                                                  |
+| -------------------------- | -------------------------------------------------------------------- | ------------ | --------------------------------------------------------- |
+| **LND Server**             | HTTPS `GET /v1/state` on port 8080 using the self-signed `tls.cert`  | Default      | Success: "LND is ready" / Starting: (no message, waiting) |
+| **Network and Graph Sync** | `lncli getinfo` (synced_to_chain + synced_to_graph)                  | Default      | Synced / Syncing to chain / Syncing to graph / Starting   |
+| **Node Reachability**      | Config check (conditional)                                           | N/A          | Disabled message if no external IP or hostname configured |
+| **Backup Restoration**     | Conditional (after restore)                                          | N/A          | Warning to sweep funds and reinstall                      |
+
+The LND Server check calls the REST `/v1/state` endpoint and returns `success` once the server replies with any valid state JSON. It is a stronger readiness signal than a bare port-listening check — the port binds before LND is actually ready to serve RPCs — so dependent services (like Mempool) that gate on this health check will wait until LND can answer API calls.
 
 ## Dependencies
 
-| Dependency | Required | Version | Purpose |
-|------------|----------|---------|---------|
-| Bitcoin Core | Optional | `>=29.1:2-beta.0` | Block data, transaction broadcasting via ZMQ + RPC cookie auth |
+| Dependency   | Required | Mounted Volume                          | Health Checks Required         | Purpose                                                        |
+| ------------ | -------- | --------------------------------------- | ------------------------------ | -------------------------------------------------------------- |
+| Bitcoin Core | Optional | `main` → `/mnt/bitcoin` (read-only)    | `sync-progress`, `bitcoind`    | Block data, transaction broadcasting via ZMQ + RPC cookie auth |
+| Tor          | Optional | None                                    | None                           | Required when "Use Tor for all traffic" is enabled             |
 
-When using Bitcoin Core as backend, LND requires the `sync-progress` and `primary` health checks to pass on Bitcoin Core before starting. LND can alternatively use **Neutrino** (built-in light client) with no dependencies.
+When using Bitcoin Core as backend, LND requires the listed health checks to pass on Bitcoin Core before starting. LND uses cookie authentication via the mounted `.cookie` file.
+
+LND can alternatively use **Neutrino** (built-in light client) with no Bitcoin Core dependency.
 
 ## Limitations and Differences
 
@@ -497,8 +622,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions and development wo
 
 ```yaml
 package_id: lnd
-upstream_version: 0.20.0-beta
-image: lightninglabs/lnd:v0.20.0-beta
+upstream_version: see manifest dockerTag
+image: lightninglabs/lnd
 architectures: [x86_64, aarch64]
 volumes:
   main: /root/.lnd
@@ -508,33 +633,32 @@ ports:
   peer: 9735
   watchtower: 9911
 dependencies:
-  - bitcoind (optional, >=29.1:2-beta.0)
+  - bitcoind (optional)
+  - tor (optional)
 startos_managed_env_vars: []
 startos_managed_files:
+  - lnd.conf
   - store.json
   - tls.cert
   - tls.key
 actions:
   - general
-  - backend-config
-  - bitcoin-config
+  - routing-fees-config
+  - channels-config
   - autopilot-config
+  - backend-config
+  - performance-config
   - watchtower-server-config
   - watchtower-client-config
-  - protocol-config
-  - sweeper-config
-  - db-bolt-config
-  - external-gateway
   - node-info
-  - aezeed-cipher-seed
   - tower-info
+  - initialize-wallet
   - reset-wallet-transactions
   - recreate-macaroons
-  - import-umbrel
 health_checks:
-  - port_listening: 8080
+  - lnd_state: https GET /v1/state on 8080 (self-signed cert from tls.cert)
   - lncli_getinfo: synced_to_chain, synced_to_graph
   - reachability: conditional
 backup_volumes:
-  - main (excluding data/graph)
+  - main (excluding data/graph, channel.db, sphinxreplay.db, neutrino.db, block_headers.bin, reg_filter_headers.bin, logs)
 ```

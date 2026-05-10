@@ -1,26 +1,25 @@
-import { FileHelper, matches } from '@start9labs/start-sdk'
+import { FileHelper, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-const { arrayOf, object, string, natural, boolean } = matches
-
-export const customConfigShape = object({
-  rcloneConfig: string.nullable(),
-  selectedRcloneRemotes: arrayOf(string).nullable(),
-  enabledRemotes: arrayOf(string).nullable(),
-  channelAutoBackupEnabled: boolean.onMismatch(false),
-
-  emailBackup: object({
-    from: string,
-    to: string,
-    smtp_server: string,
-    smtp_port: natural,
-    smtp_user: string,
-    smtp_pass: string,
-  }).nullable().onMismatch(null),
-  emailEnabled: boolean.onMismatch(false),
+export const customConfigShape = z.object({
+  rcloneConfig: z.string().nullable().catch(null),
+  selectedRcloneRemotes: z.array(z.string()).nullable().catch(null),
+  enabledRemotes: z.array(z.string()).nullable().catch(null),
+  channelAutoBackupEnabled: z.boolean().catch(false),
+  emailBackup: z.object({
+    from: z.string(),
+    to: z.string(),
+    smtp_server: z.string(),
+    smtp_port: z.number(),
+    smtp_user: z.string(),
+    smtp_pass: z.string(),
+  }).nullable().catch(null),
+  emailEnabled: z.boolean().catch(false),
 })
 
-export const customConfigJson = FileHelper.json(
+export type CustomConfigJson = z.infer<typeof customConfigShape>
+
+export const customConfigJson = FileHelper.json<CustomConfigJson>(
   {
     base: sdk.volumes.main,
     subpath: '/custom-config.json',

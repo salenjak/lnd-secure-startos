@@ -7,14 +7,16 @@ import {
 import { sdk } from '../../sdk'
 import { i18n } from '../../i18n'
 
-export const autopilotConfig = sdk.Action.withInput(
+export const channelsConfig = sdk.Action.withInput(
   // id
-  'autopilot-config',
+  'channels-config',
 
   // metadata
   async ({ effects }) => ({
-    name: i18n('Autopilot Settings'),
-    description: i18n('Edit the Autopilot settings in lnd.conf'),
+    name: i18n('Channel Settings'),
+    description: i18n(
+      'Configure channel acceptance policies including size limits, pending channel limits, and close behavior',
+    ),
     warning: null,
     allowedStatuses: 'any',
     group: i18n('Configuration'),
@@ -23,7 +25,16 @@ export const autopilotConfig = sdk.Action.withInput(
 
   // form input specification
   fullConfigSpec.filter({
-    autopilot: true,
+    'default-channel-confirmations': true,
+    'min-channel-size': true,
+    'max-channel-size': true,
+    'wumbo-channels': true,
+    'option-scid-alias': true,
+    'zero-conf': true,
+    'max-pending-channels': true,
+    'allow-circular-route': true,
+    'reject-push': true,
+    'coop-close-target': true,
   }),
 
   // optionally pre-fill the input form

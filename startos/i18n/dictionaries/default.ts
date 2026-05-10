@@ -3,9 +3,6 @@ export const DEFAULT_LANG = 'en_US'
 const dict = {
   // main.ts
   'Starting LND!': 0,
-  'REST Interface': 1,
-  'The REST interface is ready to accept connections': 2,
-  'The REST Interface is not ready': 3,
   'Network and Graph Sync Progress': 4,
   'Synced to chain and graph': 5,
   'Syncing to chain': 6,
@@ -24,12 +21,12 @@ const dict = {
   'Used for gRPC connections': 17,
   'Peer Interface': 18,
   'Used for connecting with peers': 19,
-  'Watchtower': 20,
+  Watchtower: 20,
   'Allows peers to use your watchtower server': 21,
 
   // action groups
-  'Configuration': 22,
-  'Security': 1000,
+  Configuration: 22,
+  Security: 1000,
 
   // actions/nodeInfo.ts
   'Node Info': 23,
@@ -54,12 +51,13 @@ const dict = {
   'Sharing this URL with other LND nodes will allow them to use your server as a watchtower.': 40,
   'Error fetching tower info': 41,
 
-  // actions/aezeedCipherSeed.ts
+  // shared
   'Aezeed Cipher Seed': 42,
   'Display your Aezeed Cipher Seed.': 43,
   'Seed for restoring on-chain ONLY funds. This seed has no knowledge of channel state. This is NOT a BIP-39 seed; As such it cannot be used to recover on-chain funds to any wallet other than LND.': 44,
   'No Cipher Seed found. The Aezeed Cipher Seed is not available on StartOS for some nodes initialized on earlier versions of LND. It is not possible to retreive the Seed from wallets created on these earlier versions.\nIf you would like to have a Cipher Seed backup, you will need to close your existing channels and move any on-chain funds to an intermediate wallet before creating a new LND wallet': 79,
 
+  
   // actions/recreate-macaroons.ts
   'Recreate Macaroons': 45,
   'Deletes current macaroons, and restarts LND to recreate all macaroons.': 46,
@@ -71,24 +69,27 @@ const dict = {
   'Resetting wallet transactions on next startup. If LND is already running, it will be automatically reset now.': 50,
   "Resets the best synced height of the wallet back to its birthday, or genesis if the birthday isn't known. This is useful for picking up on-chain transactions that may have been missed by LND": 80,
 
-  // actions/importUmbrel.ts
-  'Import from Umbrel (1.x)': 51,
-  'Imports wallet and channel data from Umbrel 1.x': 52,
-  'Cannot import over an existing LND wallet': 53,
-  'Warning!!! After running this action, be sure to NEVER re-start your Umbrel with the same LND seed! You should never run two different lnd nodes with the same seed! This will lead to strange/unpredictable behavior or even loss of funds.': 77,
+   // actions/initializeWallet.ts
+  'Initialize Wallet': 204,
+  'Create a new LND wallet or migrate from another device': 205,
+  'Initialization Method': 206,
+  'Choose how to initialize your LND wallet. Start Fresh creates a new wallet. Migrate from Umbrel or StartOS imports an existing wallet.': 207,
+  'Start Fresh': 208,
+  'Migrate from Umbrel': 209,
+  'IMPORTANT: Write down these 24 words and store them in a safe place. This is the ONLY time they will be displayed. This seed can restore on-chain funds ONLY — it has no knowledge of channel state. This is NOT a BIP-39 seed and cannot be used with wallets other than LND.': 210,
   'Successfully Imported Umbrel Data. WARNING!!! With the Migration of LND complete, be sure to NEVER re-start your Umbrel using the same LND seed! You should never run two different lnd nodes with the same seed! This will lead to strange/unpredictable behavior or even loss of funds.': 78,
-  'Umbrel IP Address': 83,
-  'The IP Address for your Umbrel. You can find this by running the command `ping umbrel.local` while connected to your LAN.': 84,
+  'Umbrel Address': 83,
+  'The IP address or hostname of your Umbrel (e.g. 192.168.1.9 or umbrel.local).': 84,
   'Umbrel Password': 85,
   'The password you use to log into your Umbrel dashboard or SSH': 86,
 
   // actions/config/general.ts
   'General Settings': 54,
   'General settings for your LND node': 55,
-  'Alias': 87,
+  Alias: 87,
   'The public, human-readable name of your Lightning node': 88,
   'Must be at least 1 character and no more than 32 characters': 89,
-  'Color': 90,
+  Color: 90,
   'The public color dot of your Lightning node': 91,
   'Must be a valid 6 digit hexadecimal RGB value. The first two digits are red, middle two are green, and final two are blue': 92,
   'Accept Keysend': 93,
@@ -101,13 +102,11 @@ const dict = {
   'The smallest channel size that we should accept. Incoming channels smaller than this will be rejected.': 100,
   'Maximum Channel Size': 101,
   "The largest channel size that we should accept. Incoming channels larger than this will be rejected. For non-Wumbo channels this limit remains 16777215 satoshis by default as specified in BOLT-0002. For wumbo channels this limit is 1,000,000,000 satoshis (10 BTC). Set this config option explicitly to restrict your maximum channel size to better align with your risk tolerance.  Don't forget to enable Wumbo channels under 'Advanced,' if desired.": 102,
-  'Tor Config': 103,
-  'Advanced options for increasing privacy (at the cost of performance) using Tor': 104,
   'Use Tor for all traffic': 105,
   "Use the tor proxy even for connections that are reachable on clearnet. This will hide your node's public IP address, but will slow down your node's performance": 106,
   'Stream Isolation': 107,
   "Enable Tor stream isolation by randomizing user credentials for each connection. With this mode active, each connection will use a new circuit. This means that multiple applications (other than lnd) using Tor won't be mixed in with lnd's traffic. This option may not be used when 'Use Tor for all traffic' is disabled, since direct connections compromise source IP privacy by default.": 108,
-  'Advanced': 109,
+  Advanced: 109,
   'Advanced Options': 110,
   'Log Verbosity': 111,
   'Sets the level of log filtration. Trace is the most verbose, Critical is the least.': 112,
@@ -150,7 +149,7 @@ const dict = {
   'Select Bitcoin Node': 141,
   'Select between a local bitcoin node and Neutrino as the backend for LND. As Neutrino involves reliance on third-party nodes it is advisable to use either Core or Knots instead. Once Core or Knots are selected it is not supported to switch to Neutrino; however LND can always switch from Neutrino to Core/Knots at a later time.': 142,
   'Local Bitcoin Node': 143,
-  'Neutrino': 144,
+  Neutrino: 144,
 
   // actions/config/autopilot.ts
   'Autopilot Settings': 60,
@@ -158,13 +157,13 @@ const dict = {
   'Enable Autopilot': 145,
   'If the autopilot agent should be active or not. The autopilot agent will attempt to AUTOMATICALLY OPEN CHANNELS to put your node in an advantageous position within the network graph.': 146,
   'DO NOT ENABLE AUTOPILOT IF YOU WANT TO MANAGE CHANNELS MANUALLY OR IF YOU DO NOT UNDERSTAND THIS FEATURE.': 147,
-  'Disabled': 148,
-  'Enabled': 149,
-  'Private': 150,
+  Disabled: 148,
+  Enabled: 149,
+  Private: 150,
   "Whether the channels created by the autopilot agent should be private or not. Private channels won't be announced to the network.": 151,
   'Maximum Channels': 152,
   'The maximum number of channels that should be created.': 153,
-  'Allocation': 154,
+  Allocation: 154,
   'The fraction of total funds that should be committed to automatic channel establishment. For example 60% means that 60% of the total funds available within the wallet should be used to automatically establish channels. The total amount of attempted channels will still respect the "Maximum Channels" parameter. ': 155,
   'The smallest channel that the autopilot agent should create.': 156,
   'The largest channel that the autopilot agent should create.': 157,
@@ -234,21 +233,75 @@ const dict = {
   'Bolt DB Timeout': 200,
   'How long should LND try to open the database before giving up?': 201,
 
-  // actions/config/externalGateway.ts
-  'Set External IP': 71,
-  'Optionally advertise your IP address to the network': 72,
-  'Select Gateway': 202,
-  'None': 203,
-
   // shared action results
-  'Success': 73,
-  'Failure': 74,
+  Success: 73,
+  Failure: 74,
 
   // init/taskSetBackend.ts
   'LND needs to know what Bitcoin backend should be used': 75,
 
+  // init/taskInitWallet.ts
+  'LND needs a wallet to operate': 211,
+
   // dependencies.ts
   'LND requires ZMQ enabled in Bitcoin': 76,
+
+  // actions/initializeWallet.ts (StartOS migration)
+  'Migrate from StartOS': 212,
+  'Origin Server Address': 213,
+  'The LAN IP address or hostname of your old StartOS server (e.g. 192.168.1.9 or adjective-noun.local).': 214,
+  'Master Password': 215,
+  'The master password for your old StartOS server.': 216,
+  'Failed to parse wallet password from origin StartOS server.': 217,
+  'Successfully imported LND data from StartOS. WARNING: Do NOT start LND on the old server again with the same wallet. Running two LND nodes with the same seed will lead to unpredictable behavior or loss of funds.': 218,
+
+  // actions/config — new config fields
+  'Accept AMP': 219,
+  'Accept Atomic Multi-Path spontaneous payments. AMP allows a single payment to be split across multiple channels for better reliability': 220,
+  'The number of blocks subtracted from the incoming HTLC timelock for forwarded payments. Higher values are safer but may reduce routing competitiveness. Routing nodes commonly use 144 (approximately 24 hours)': 221,
+  'The smallest channel size in satoshis that your node will accept. Increase this to reject tiny, uneconomical channels. The upstream default is 20,000 sats': 222,
+  'The largest channel size in satoshis that your node will accept. To accept channels larger than ~0.167 BTC (16,777,215 sats), you must also enable Wumbo Channels': 223,
+  'Wumbo Channels': 224,
+  'Enable support for channels larger than ~0.167 BTC (16,777,215 sats). Both peers must have Wumbo enabled to open a large channel. Required if you set a Maximum Channel Size above 16,777,215': 225,
+  'Max Pending Channels': 226,
+  'The maximum number of incoming channel requests waiting to be confirmed per peer. Increase this if you want to allow peers to batch-open multiple channels with you': 227,
+  'Allow a payment to arrive and depart through the same channel. Required for self-rebalancing tools such as Balance of Satoshis or circular rebalance scripts': 228,
+  'Reject Push': 229,
+  'Reject incoming channel open requests that include a non-zero push amount (where the opener gifts sats to your side). This can be used as a precaution against certain probing attacks': 230,
+  'Cooperative Close Confirmation Target': 231,
+  'The target number of blocks for cooperative channel close transactions. Lower values pay higher on-chain fees for faster confirmation. Higher values (e.g. 100-1000) can save fees when speed is not important': 232,
+  'Auto-Compact Database': 233,
+  'Automatically compact the bolt database on startup. Compaction reclaims wasted disk space and can improve performance over time. Recommended for most nodes': 234,
+  'Delete Canceled Invoices on Startup': 235,
+  'Delete all canceled invoices when LND starts. This reduces database size and improves performance': 236,
+  'Delete Canceled Invoices Immediately': 237,
+  'Delete canceled invoices immediately as they are canceled, rather than waiting for startup cleanup': 238,
+  'Stagger Initial Reconnect': 239,
+  'Randomize the delay between reconnection attempts to peers on startup. Prevents a bandwidth spike when all peers reconnect simultaneously. Recommended for routing nodes': 240,
+  'Ignore Historical Gossip Filters': 241,
+  'Do not serve historical gossip data to peers that request it. Saves bandwidth and CPU at the cost of being less helpful to peers bootstrapping their network graph': 242,
+  'Strict Graph Pruning': 243,
+  'Prune a channel from the network graph if even one of its edges (direction announcements) is stale. Results in a smaller, more accurate routing graph': 244,
+
+  'Enable support for zero-confirmation channels. Requires option-scid-alias to also be enabled. Zero-conf channels can be used immediately without waiting for on-chain confirmations. Required for Lightning Loop and Pool integration': 251,
+
+  // actions — new action names/descriptions
+  'Routing Fees': 245,
+  'Configure the default fees and timelock delta applied to forwarded payments on your channels': 246,
+  'Channel Settings': 247,
+  'Configure channel acceptance policies including size limits, pending channel limits, and close behavior': 248,
+  Performance: 249,
+  'Performance and maintenance settings for database compaction, invoice cleanup, and network efficiency': 250,
+
+  // main.ts — ready check
+  'LND Server': 252,
+  'LND is ready': 253,
+
+  // Footnote label for showing upstream default value
+  Default: 254,
+
+  // Refreshed description after moving upstream default into the footnote
+  'The smallest channel size in satoshis that your node will accept. Increase this to reject tiny, uneconomical channels.': 255,
 } as const
 
 /**

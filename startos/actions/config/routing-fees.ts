@@ -7,14 +7,16 @@ import {
 import { sdk } from '../../sdk'
 import { i18n } from '../../i18n'
 
-export const autopilotConfig = sdk.Action.withInput(
+export const routingFeesConfig = sdk.Action.withInput(
   // id
-  'autopilot-config',
+  'routing-fees-config',
 
   // metadata
   async ({ effects }) => ({
-    name: i18n('Autopilot Settings'),
-    description: i18n('Edit the Autopilot settings in lnd.conf'),
+    name: i18n('Routing Fees'),
+    description: i18n(
+      'Configure the default fees and timelock delta applied to forwarded payments on your channels',
+    ),
     warning: null,
     allowedStatuses: 'any',
     group: i18n('Configuration'),
@@ -23,7 +25,9 @@ export const autopilotConfig = sdk.Action.withInput(
 
   // form input specification
   fullConfigSpec.filter({
-    autopilot: true,
+    'base-fee': true,
+    'fee-rate': true,
+    'timelock-delta': true,
   }),
 
   // optionally pre-fill the input form
