@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon.png" alt="LND Logo" width="21%">
+  <img src="icon.svg" alt="LND Logo" width="21%">
 </p>
 
 # LND for StartOS — "Be Your Own <b>LOCKED</b> (this fork) / <b>UNLOCKED</b> (official version) Bank"
@@ -311,7 +311,7 @@ main.ts
 > **Upstream docs:** <https://docs.lightning.engineering/>
 >
 > Everything not listed in this document should behave the same as upstream
-> LND v0.20.0-beta. If a feature, setting, or behavior is not mentioned
+> LND. If a feature, setting, or behavior is not mentioned
 > here, the upstream documentation is accurate and fully applicable.
 
 A complete implementation of a Lightning Network node by [Lightning Labs](https://lightning.engineering/). See the [upstream repo](https://github.com/lightningnetwork/lnd) for general LND documentation.
@@ -325,7 +325,7 @@ A complete implementation of a Lightning Network node by [Lightning Labs](https:
 - [Installation and First-Run Flow](#installation-and-first-run-flow)
 - [Configuration Management](#configuration-management)
 - [Network Access and Interfaces](#network-access-and-interfaces)
-- [Actions](#actions-startos-ui)
+- [Actions (StartOS UI)](#actions-startos-ui)
 - [Backups and Restore](#backups-and-restore)
 - [Health Checks](#health-checks)
 - [Dependencies](#dependencies)

@@ -53,9 +53,6 @@ const dict = {
 
   // shared
   'Aezeed Cipher Seed': 42,
-  'Display your Aezeed Cipher Seed.': 43,
-  'Seed for restoring on-chain ONLY funds. This seed has no knowledge of channel state. This is NOT a BIP-39 seed; As such it cannot be used to recover on-chain funds to any wallet other than LND.': 44,
-  'No Cipher Seed found. The Aezeed Cipher Seed is not available on StartOS for some nodes initialized on earlier versions of LND. It is not possible to retreive the Seed from wallets created on these earlier versions.\nIf you would like to have a Cipher Seed backup, you will need to close your existing channels and move any on-chain funds to an intermediate wallet before creating a new LND wallet': 79,
 
   
   // actions/recreate-macaroons.ts
