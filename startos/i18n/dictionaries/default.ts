@@ -3,6 +3,8 @@ export const DEFAULT_LANG = 'en_US'
 const dict = {
   // main.ts
   'Starting LND!': 0,
+  'Sync Complete': 1,
+  'LND is synced to chain and graph.': 2,
   'Network and Graph Sync Progress': 4,
   'Synced to chain and graph': 5,
   'Syncing to chain': 6,
@@ -76,7 +78,7 @@ const dict = {
   'Choose how to initialize your LND wallet. Start Fresh creates a new wallet. Migrate from Umbrel or StartOS imports an existing wallet.': 207,
   'Start Fresh': 208,
   'Migrate from Umbrel': 209,
-  'IMPORTANT: Write down these 24 words and store them in a safe place. This is the ONLY time they will be displayed. This seed can restore on-chain funds ONLY — it has no knowledge of channel state. This is NOT a BIP-39 seed and cannot be used with wallets other than LND.': 210,
+  "IMPORTANT: Write down these 24 words and store them in a safe place — this is the ONLY time they will be displayed. The seed alone is NOT enough to recover your node: it restores ON-CHAIN funds only and has no knowledge of your channels. To recover funds locked in Lightning channels, you must ALSO keep StartOS backups, which include LND's Static Channel Backup. This is NOT a BIP-39 seed and cannot be used with wallets other than LND.": 210,
   'Successfully Imported Umbrel Data. WARNING!!! With the Migration of LND complete, be sure to NEVER re-start your Umbrel using the same LND seed! You should never run two different lnd nodes with the same seed! This will lead to strange/unpredictable behavior or even loss of funds.': 78,
   'Umbrel Address': 83,
   'The IP address or hostname of your Umbrel (e.g. 192.168.1.9 or umbrel.local).': 84,
@@ -102,8 +104,8 @@ const dict = {
   'The smallest channel size that we should accept. Incoming channels smaller than this will be rejected.': 100,
   'Maximum Channel Size': 101,
   "The largest channel size that we should accept. Incoming channels larger than this will be rejected. For non-Wumbo channels this limit remains 16777215 satoshis by default as specified in BOLT-0002. For wumbo channels this limit is 1,000,000,000 satoshis (10 BTC). Set this config option explicitly to restrict your maximum channel size to better align with your risk tolerance.  Don't forget to enable Wumbo channels under 'Advanced,' if desired.": 102,
-  'Use Tor for all traffic': 105,
-  "Use the tor proxy even for connections that are reachable on clearnet. This will hide your node's public IP address, but will slow down your node's performance": 106,
+  'Skip for clearnet peers': 105,
+  "Dial peers that are reachable on clearnet directly, skipping the Tor proxy. When off, all outbound peer connections — including clearnet-reachable ones — are routed through Tor, hiding your node's public IP address at the cost of performance.": 106,
   'Stream Isolation': 107,
   "Enable Tor stream isolation by randomizing user credentials for each connection. With this mode active, each connection will use a new circuit. This means that multiple applications (other than lnd) using Tor won't be mixed in with lnd's traffic. This option may not be used when 'Use Tor for all traffic' is disabled, since direct connections compromise source IP privacy by default.": 108,
   Advanced: 109,
@@ -154,6 +156,8 @@ const dict = {
   // actions/config/autopilot.ts
   'Autopilot Settings': 60,
   'Edit the Autopilot settings in lnd.conf': 61,
+  'Tor Settings': 260,
+  'Edit the Tor settings in lnd.conf': 261,
   'Enable Autopilot': 145,
   'If the autopilot agent should be active or not. The autopilot agent will attempt to AUTOMATICALLY OPEN CHANNELS to put your node in an advantageous position within the network graph.': 146,
   'DO NOT ENABLE AUTOPILOT IF YOU WANT TO MANAGE CHANNELS MANUALLY OR IF YOU DO NOT UNDERSTAND THIS FEATURE.': 147,
@@ -302,6 +306,20 @@ const dict = {
 
   // Refreshed description after moving upstream default into the footnote
   'The smallest channel size in satoshis that your node will accept. Increase this to reject tiny, uneconomical channels.': 255,
+
+  'Enable Tor': 256,
+  "Route LND's outbound peer connections through the Tor SOCKS proxy. When disabled, LND uses the host's normal network stack. Enabling this makes Tor a required running dependency. Disable if Tor is unavailable or is interfering with wallet sync (btcwallet's embedded rescanner does not always respect this setting, so sync can stall on Tor-only environments).": 257,
+
+  // Channel Settings — Taproot Overlay (Taproot Assets)
+  'Experimental Taproot Overlay Channels': 258,
+  'Enable support for taproot overlay channels — taproot channels carrying custom Taproot Assets data alongside Bitcoin payments. Used by the Taproot Assets daemon (tapd). Requires Experimental Taproot Channels to also be enabled.': 259,
+
+  // Reachability — Custom External Host
+  'Custom External Host': 262,
+  'Advertise an additional public address (e.g. a Tunnelsats or VPN endpoint) alongside your Tor and StartOS-managed addresses': 263,
+  'An additional public domain at which your node can be reached, advertised to the network alongside any Tor or StartOS-managed addresses. Use this for an external tunnel or VPN endpoint, such as Tunnelsats. Enter a domain, optionally followed by a port (e.g. example.com:22222); the port defaults to 9735. A static IP does not belong here — StartOS advertises detected public IPs automatically.': 264,
+  'Must be a domain name, optionally followed by :port (e.g. example.com:9735).': 265,
+  'LND re-resolves this address periodically, so it also works for dynamic-DNS tunnels.': 266,
 } as const
 
 /**

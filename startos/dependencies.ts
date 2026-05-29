@@ -8,13 +8,13 @@ export const setDependencies = sdk.setupDependencies(async ({ effects }) => {
   const conf = await lndConfFile
     .read((l) => ({
       bitcoinNode: l['bitcoin.node'],
-      useTorOnly: l['tor.skip-proxy-for-clearnet-targets'] === false,
+      torActive: l['tor.active'],
     }))
     .const(effects)
 
   const deps: T.CurrentDependenciesResult<any> = {}
 
-  if (conf?.useTorOnly) {
+  if (conf?.torActive) {
     deps.tor = {
       kind: 'running',
       versionRange: '>=0.4.9.5:0',

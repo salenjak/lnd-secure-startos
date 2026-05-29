@@ -6,6 +6,7 @@ import { base64 } from 'rfc4648'
 import { lndConfFile } from './fileModels/lnd.conf'
 import { storeJson } from './fileModels/store.json'
 import { customConfigJson } from './fileModels/custom-config.json'
+import { syncNotifiedFile } from './fileModels/syncNotified.json'
 import { i18n } from './i18n'
 import { restPort } from './interfaces'
 import { sdk } from './sdk'
@@ -59,6 +60,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (!store) {
     throw new Error('No store.json')
   }
+
+  let notified = (await syncNotifiedFile.read().once())?.notified ?? false
 
   const conf = await lndConfFile.read().const(effects)
   if (!conf) {
@@ -409,6 +412,28 @@ export const main = sdk.setupMain(async ({ effects }) => {
         },
       },
       requires: ['lnd', 'unlock-wallet'],
+    })
+    .addOneshot('synced-true', {
+      subcontainer: null,
+      exec: {
+        fn: async () => {
+          // The SDK re-fires this oneshot every time sync-progress dips out
+          // of success and recovers (graph re-sync, transient lncli errors).
+          // The closure flag is the source of truth within a main lifecycle;
+          // the on-disk flag re-seeds it on next startup.
+          if (!notified) {
+            await sdk.notification.create(effects, {
+              level: 'success',
+              title: i18n('Sync Complete'),
+              message: i18n('LND is synced to chain and graph.'),
+            })
+            await syncNotifiedFile.write(effects, { notified: true })
+            notified = true
+          }
+          return null
+        },
+      },
+      requires: ['sync-progress'],
     })
     .addOneshot('restore', () =>
       restore

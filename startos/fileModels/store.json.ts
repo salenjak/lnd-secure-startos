@@ -15,6 +15,7 @@ export const shape = z.object({
   passwordBackupConfirmed: z.boolean().catch(false),
   seedBackupIndices: z.array(z.number()).nullable().catch(null),
   watchtowerClients: z.array(z.string()).catch([]), 
+  customExternalHosts: z.array(z.string()).catch([]),
 })
 
 export const storeJson = FileHelper.json(

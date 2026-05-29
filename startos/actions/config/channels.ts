@@ -31,6 +31,8 @@ export const channelsConfig = sdk.Action.withInput(
     'wumbo-channels': true,
     'option-scid-alias': true,
     'zero-conf': true,
+    'simple-taproot-chans': true,
+    'simple-taproot-overlay-chans': true,
     'max-pending-channels': true,
     'allow-circular-route': true,
     'reject-push': true,

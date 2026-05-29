@@ -48,7 +48,6 @@ export const shape = z.object({
   'bitcoind.rpcuser': z.undefined().catch(undefined),
   'bitcoind.rpcpass': z.undefined().catch(undefined),
   'bitcoin.active': z.undefined().catch(undefined), // deprecated
-  'tor.active': z.literal(true).catch(true),
   'tor.v3': z.undefined().catch(undefined),
 
   // ──── Bitcoind (set by backend config) ────
@@ -72,6 +71,8 @@ export const shape = z.object({
   'protocol.wumbo-channels': iniBoolean,
   'protocol.option-scid-alias': iniBoolean,
   'protocol.zero-conf': iniBoolean,
+  'protocol.simple-taproot-chans': iniBoolean,
+  'protocol.simple-taproot-overlay-chans': iniBoolean,
   maxpendingchannels: iniNumber,
   'allow-circular-route': iniBoolean,
   rejectpush: iniBoolean,
@@ -103,8 +104,11 @@ export const shape = z.object({
   'autopilot.conftarget': iniNumber,
 
   // ──── Tor ────
+  'tor.active': z.boolean().catch(true),
   'tor.socks': iniString,
-  'tor.skip-proxy-for-clearnet-targets': iniBoolean,
+  'tor.skip-proxy-for-clearnet-targets': iniBoolean.transform(
+    (v) => v ?? false,
+  ),
 
   // ──── Watchtower ────
   'watchtower.active': iniBoolean,
@@ -171,13 +175,48 @@ export const fullConfigSpec = InputSpec.of({
     ),
     footnote: `${i18n('Default')}: false`,
   }),
-  'use-tor-only': Value.triState({
-    name: i18n('Use Tor for all traffic'),
-    default: false,
+  tor: Value.union({
+    name: i18n('Enable Tor'),
     description: i18n(
-      "Use the tor proxy even for connections that are reachable on clearnet. This will hide your node's public IP address, but will slow down your node's performance",
+      "Route LND's outbound peer connections through the Tor SOCKS proxy. When disabled, LND uses the host's normal network stack. Enabling this makes Tor a required running dependency. Disable if Tor is unavailable or is interfering with wallet sync (btcwallet's embedded rescanner does not always respect this setting, so sync can stall on Tor-only environments).",
     ),
-    footnote: `${i18n('Default')}: true`,
+    default: 'enabled',
+    variants: Variants.of({
+      disabled: { name: i18n('Disabled'), spec: InputSpec.of({}) },
+      enabled: {
+        name: i18n('Enabled'),
+        spec: InputSpec.of({
+          'skip-clearnet': Value.toggle({
+            name: i18n('Skip for clearnet peers'),
+            default: true,
+            description: i18n(
+              "Dial peers that are reachable on clearnet directly, skipping the Tor proxy. When off, all outbound peer connections — including clearnet-reachable ones — are routed through Tor, hiding your node's public IP address at the cost of performance.",
+            ),
+          }),
+        }),
+      },
+    }),
+  }),
+  // ── Reachability ──
+  'custom-external-host': Value.text({
+    name: i18n('Custom External Host'),
+    default: null,
+    required: false,
+    description: i18n(
+      'An additional public domain at which your node can be reached, advertised to the network alongside any Tor or StartOS-managed addresses. Use this for an external tunnel or VPN endpoint, such as Tunnelsats. Enter a domain, optionally followed by a port (e.g. example.com:22222); the port defaults to 9735. A static IP does not belong here — StartOS advertises detected public IPs automatically.',
+    ),
+    placeholder: 'example.tunnelsatsv2.com:22222',
+    patterns: [
+      {
+        regex: '^([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}(:[0-9]{1,5})?$',
+        description: i18n(
+          'Must be a domain name, optionally followed by :port (e.g. example.com:9735).',
+        ),
+      },
+    ],
+    footnote: i18n(
+      'LND re-resolves this address periodically, so it also works for dynamic-DNS tunnels.',
+    ),
   }),
   // ── Routing Fees ──
   'base-fee': Value.number({
@@ -277,6 +316,22 @@ export const fullConfigSpec = InputSpec.of({
     default: null,
     description: i18n(
       'Enable support for zero-confirmation channels. Requires option-scid-alias to also be enabled. Zero-conf channels can be used immediately without waiting for on-chain confirmations. Required for Lightning Loop and Pool integration',
+    ),
+    footnote: `${i18n('Default')}: false`,
+  }),
+  'simple-taproot-chans': Value.triState({
+    name: i18n('Experimental Taproot Channels'),
+    default: null,
+    description: i18n(
+      'Taproot Channels improve both privacy and cost efficiency of on-chain transactions. Note: Taproot Channels are experimental and only available for unannounced (private) channels at this time.',
+    ),
+    footnote: `${i18n('Default')}: false`,
+  }),
+  'simple-taproot-overlay-chans': Value.triState({
+    name: i18n('Experimental Taproot Overlay Channels'),
+    default: null,
+    description: i18n(
+      'Enable support for taproot overlay channels — taproot channels carrying custom Taproot Assets data alongside Bitcoin payments. Used by the Taproot Assets daemon (tapd). Requires Experimental Taproot Channels to also be enabled.',
     ),
     footnote: `${i18n('Default')}: false`,
   }),
@@ -523,10 +578,14 @@ export function fileToForm(conf: LndConf): PartialFormType {
     color: conf.color?.replace('#', ''),
     'accept-keysend': conf['accept-keysend'],
     'accept-amp': conf['accept-amp'],
-    'use-tor-only':
-      conf['tor.skip-proxy-for-clearnet-targets'] != null
-        ? !conf['tor.skip-proxy-for-clearnet-targets']
-        : undefined,
+    tor: conf['tor.active']
+      ? {
+          selection: 'enabled' as const,
+          value: {
+            'skip-clearnet': conf['tor.skip-proxy-for-clearnet-targets'],
+          },
+        }
+      : { selection: 'disabled' as const },
     // Routing Fees
     'base-fee': conf['bitcoin.basefee'],
     'fee-rate': conf['bitcoin.feerate'],
@@ -538,6 +597,9 @@ export function fileToForm(conf: LndConf): PartialFormType {
     'wumbo-channels': conf['protocol.wumbo-channels'],
     'option-scid-alias': conf['protocol.option-scid-alias'],
     'zero-conf': conf['protocol.zero-conf'],
+    'simple-taproot-chans': conf['protocol.simple-taproot-chans'],
+    'simple-taproot-overlay-chans':
+      conf['protocol.simple-taproot-overlay-chans'],
     'max-pending-channels': conf.maxpendingchannels,
     'allow-circular-route': conf['allow-circular-route'],
     'reject-push': conf.rejectpush,
@@ -595,9 +657,17 @@ export function formToFile(
     result['accept-amp'] = input['accept-amp'] ?? undefined
 
   // Tor
-  if ('use-tor-only' in input)
-    result['tor.skip-proxy-for-clearnet-targets'] =
-      input['use-tor-only'] == null ? undefined : !input['use-tor-only']
+  if (input.tor) {
+    if (input.tor.selection === 'disabled') {
+      result['tor.active'] = false
+      result['tor.skip-proxy-for-clearnet-targets'] = undefined
+    } else if (input.tor.selection === 'enabled') {
+      const val = input.tor.value
+      result['tor.active'] = true
+      if (val && 'skip-clearnet' in val)
+        result['tor.skip-proxy-for-clearnet-targets'] = val['skip-clearnet']
+    }
+  }
 
   // Routing Fees
   if ('base-fee' in input)
@@ -622,6 +692,12 @@ export function formToFile(
       input['option-scid-alias'] ?? undefined
   if ('zero-conf' in input)
     result['protocol.zero-conf'] = input['zero-conf'] ?? undefined
+  if ('simple-taproot-chans' in input)
+    result['protocol.simple-taproot-chans'] =
+      input['simple-taproot-chans'] ?? undefined
+  if ('simple-taproot-overlay-chans' in input)
+    result['protocol.simple-taproot-overlay-chans'] =
+      input['simple-taproot-overlay-chans'] ?? undefined
   if ('max-pending-channels' in input)
     result.maxpendingchannels = input['max-pending-channels'] ?? undefined
   if ('allow-circular-route' in input)
