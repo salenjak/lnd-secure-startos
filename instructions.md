@@ -1,4 +1,4 @@
-# LND
+# LND Secure
 
 ## Documentation
 

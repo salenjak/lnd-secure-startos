@@ -13,7 +13,7 @@ export const manifest = setupManifest({
   id: 'lnd',
   title: 'LND',
   license: 'MIT',
-  packageRepo: 'https://github.com/salenjak/lnd-startos',
+  packageRepo: 'https://github.com/salenjak/lnd-secure-startos',
   upstreamRepo: 'https://github.com/lightningnetwork/lnd',
   marketingUrl: 'https://lightning.engineering/',
   donationUrl: null,

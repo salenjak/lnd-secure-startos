@@ -1,5 +1,5 @@
 {
-  "name": "lnd-startos",
+  "name": "lnd-secure-startos",
   "scripts": {
     "build": "ncc build startos/index.ts -o ./javascript",
     "prettier": "prettier --write startos",
