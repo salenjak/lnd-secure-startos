@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises'
 import { request } from 'node:https'
 import { base64 } from 'rfc4648'
 import { lndConfFile } from './fileModels/lnd.conf'
+import { startupFlagsJson } from './fileModels/startupFlags.json'
 import { storeJson } from './fileModels/store.json'
 import { customConfigJson } from './fileModels/custom-config.json'
-import { syncNotifiedFile } from './fileModels/syncNotified.json'
 import { i18n } from './i18n'
 import { restPort } from './interfaces'
 import { sdk } from './sdk'
@@ -49,7 +49,6 @@ async function getLndState(): Promise<string | null> {
   })
 }
 
-
 export const main = sdk.setupMain(async ({ effects }) => {
   /**
    * ======================== Setup (optional) ========================
@@ -61,7 +60,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
     throw new Error('No store.json')
   }
 
-  let notified = (await syncNotifiedFile.read().once())?.notified ?? false
+  // One-time startup flags live outside store.json — read with `.once`, not the
+  // `.const` watch above — so flipping them back after startup doesn't restart
+  // main. The action that sets resetWalletTransactions restarts LND itself via
+  // sdk.restart; here we only consume and then clear.
+  const startupFlags = await startupFlagsJson.read().once()
+  if (!startupFlags) {
+    throw new Error('No startup-flags.json')
+  }
+  const { resetWalletTransactions, restore } = startupFlags
+  let notified = startupFlags.notified
 
   const conf = await lndConfFile.read().const(effects)
   if (!conf) {
@@ -78,8 +86,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
   )
 
   const {
-    resetWalletTransactions,
-    restore,
     walletPassword,
     watchtowerClients,
     autoUnlockEnabled,
@@ -123,7 +129,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     lndArgs.push('--reset-wallet-transactions')
   }
 
-  // Handle Pending Password Change
+    // Handle Pending Password Change
   if (pendingPasswordChange) {
     if (!walletPassword) {
       throw new Error('Cannot change password: no current password available')
@@ -140,7 +146,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         async (lndSubTemp) => {
           const tempArgs = [
             '--rpclisten=0.0.0.0:10009',
-            '--restlisten=0.0.0.0:8080',
+            `--restlisten=0.0.0.0:${restPort}`,
             '--debuglevel=error',
           ]
           console.log('Starting LND for password change...')
@@ -154,7 +160,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
               const healthCheck = await lndSubTemp.exec([
                 'curl', '--no-progress-meter',
                 '--cacert', `${lndDataDir}/tls.cert`,
-                'https://lnd.startos:8080/v1/getinfo',
+                `https://lnd.startos:${restPort}/v1/getinfo`,
               ])
               if (healthCheck.exitCode === 0) {
                 restReady = true
@@ -173,12 +179,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
             throw new Error(`LND REST API not ready after ${maxAttempts} seconds. Check LND logs for errors.`)
           }
 
-          const currentBase64 = Buffer.from(currentPassword, 'utf8').toString('base64')
-          const newBase64 = Buffer.from(newPassword, 'utf8').toString('base64')
+          const currentBase64 = base64.stringify(Buffer.from(currentPassword, 'latin1'))
+          const newBase64 = base64.stringify(Buffer.from(newPassword, 'latin1'))
 
           const changeResult = await lndSubTemp.exec([
             'curl', '--no-progress-meter', '-X', 'POST', '--cacert', `${lndDataDir}/tls.cert`,
-            'https://lnd.startos:8080/v1/changepassword',
+            `https://lnd.startos:${restPort}/v1/changepassword`,
             '-d', JSON.stringify({ current_password: currentBase64, new_password: newBase64 }),
           ])
 
@@ -255,78 +261,110 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
-    .addOneshot('unlock-wallet', {
+        .addOneshot('unlock-wallet', {
       exec: {
-        fn: async (subcontainer: typeof lndSub, abort: any) => {
-          const currentStore = await storeJson.read().const(effects)
-          if (!currentStore) {
-            console.log('No store found. Skipping unlock.')
-            return null
-          }
-          const currentAutoUnlockEnabled = currentStore.autoUnlockEnabled
-          const currentWalletPasswordPlaintext = currentStore.walletPassword
-          if (!currentWalletPasswordPlaintext) {
-            console.log('No wallet password found. Skipping unlock.')
-            return null
-          }
-          const walletPasswordForApi = Buffer.from(currentWalletPasswordPlaintext, 'utf8').toString('base64')
-          const currentWalletInitialized = currentStore.walletInitialized
-          const recoveryWindow = currentStore.recoveryWindow
-          const restoreFlag = currentStore.restore
-          console.log(`Unlock oneshot started... Auto-unlock: ${currentAutoUnlockEnabled}`)
-          if (!currentWalletInitialized) {
-            console.log('Wallet not initialized. Skipping unlock.')
-            return null
-          }
-          if (currentAutoUnlockEnabled && currentWalletPasswordPlaintext) {
-            console.log('Auto-unlock enabled. Unlocking wallet...')
-            let unlockAttempts = 0
-            const maxUnlockAttempts = 5
-            let unlockSuccess = false
-            while (unlockAttempts < maxUnlockAttempts && !unlockSuccess) {
-              try {
-                const command = [
-                  'curl', '--no-progress-meter', '-X', 'POST', '--cacert', `${lndDataDir}/tls.cert`,
-                  'https://lnd.startos:8080/v1/unlockwallet',
-                  '-d',
-                  restoreFlag
-                    ? JSON.stringify({ wallet_password: walletPasswordForApi, recovery_window: recoveryWindow })
-                    : JSON.stringify({ wallet_password: walletPasswordForApi }),
-                ]
-                const result = await subcontainer.exec(command, undefined, undefined, { abort: abort.reason, signal: abort })
-                if (result.exitCode === 0 && result.stdout?.toString().trim() === '{}') {
-                  unlockSuccess = true
-                } else {
-                  throw new Error(`Unlock failed: ${result.stderr?.toString() || 'Unknown error'}`)
-                }
-              } catch (err) {
-                console.error('Unlock attempt failed:', (err as Error).message)
-                unlockAttempts++
-                if (unlockAttempts < maxUnlockAttempts) {
-                  const delayStart = Date.now()
-                  const totalDelayMs = 5000
-                  const pollIntervalMs = 500
-                  while (Date.now() - delayStart < totalDelayMs) {
-                    if (abort.aborted) throw new Error('Unlock aborted during retry delay')
-                    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-                  }
-                } else {
-                  throw new Error(`Failed to unlock wallet after ${maxUnlockAttempts} attempts: ${(err as Error).message}`)
-                }
-              }
+        fn: async (subcontainer, abort) => {
+          while (true) {
+            if (abort.aborted) {
+              console.log('wallet-unlock aborted')
+              break
             }
-            if (!unlockSuccess) throw new Error('Unlock failed after all attempts')
-            return null
-          } else {
-            console.log('Auto-unlock disabled or no password. Skipping auto-unlock.')
-            return null
+
+            // Use upstream's robust state machine polling
+            const state = await getLndState()
+            if (
+              state === 'UNLOCKED' ||
+              state === 'RPC_ACTIVE' ||
+              state === 'SERVER_ACTIVE'
+            ) {
+              console.log(`wallet-unlock skipped, state=${state}`)
+              break
+            }
+            if (state !== 'LOCKED') {
+              // NON_EXISTING (wallet not initialized yet), WAITING_TO_START, or unreachable
+              await sleep(2_000)
+              continue
+            }
+
+            // State is LOCKED. Check if we should auto-unlock.
+            const currentStore = await storeJson.read().const(effects)
+            if (!currentStore) {
+              await sleep(2_000)
+              continue
+            }
+
+            const { autoUnlockEnabled, walletPassword } = currentStore
+            if (!autoUnlockEnabled) {
+              console.log('Auto-unlock disabled. Waiting for manual unlock via UI...')
+              await sleep(5_000)
+              continue
+            }
+
+            if (!walletPassword) {
+              console.log('Auto-unlock enabled but no password in store. Waiting...')
+              await sleep(5_000)
+              continue
+            }
+
+            // Use upstream's fixed base64 encoding and dynamic restPort
+            const res = await subcontainer.exec([
+              'curl',
+              '--no-progress-meter',
+              '-X',
+              'POST',
+              '--cacert',
+              `${lndDataDir}/tls.cert`,
+              `https://lnd.startos:${restPort}/v1/unlockwallet`,
+              '-d',
+              restore // <--- Uses the top-level variable from startupFlags!
+                ? JSON.stringify({
+                    wallet_password: base64.stringify(
+                      Buffer.from(walletPassword, 'latin1'),
+                    ),
+                    recovery_window: 2_500,
+                  })
+                : JSON.stringify({
+                    wallet_password: base64.stringify(
+                      Buffer.from(walletPassword, 'latin1'),
+                    ),
+                  }),
+            ])
+            console.log('wallet-unlock response', res)
+            const stdout = res.stdout.toString().trim()
+            if (stdout === '{}' || stdout.includes('wallet already unlocked')) {
+              break
+            }
+            await sleep(10_000)
           }
+          return null
         },
       },
       subcontainer: lndSub,
       requires: ['lnd'],
     })
-       .addHealthCheck('sync-progress', {
+    .addOneshot('clear-reset-flag', () =>
+      // `--reset-wallet-transactions` is consumed once, when LND opens the
+      // wallet at unlock. Now that unlock-wallet has completed the reset has
+      // been applied, so clear the flag — otherwise it stays true and re-adds
+      // the flag on every subsequent restart. The flag lives outside store.json
+      // (read with `.once`), so this write does NOT trip a const watch and
+      // restart main.
+      resetWalletTransactions
+        ? {
+            subcontainer: null,
+            exec: {
+              fn: async () => {
+                await startupFlagsJson.merge(effects, {
+                  resetWalletTransactions: false,
+                })
+                return null
+              },
+            },
+            requires: ['unlock-wallet'],
+          }
+        : null,
+    )
+    .addHealthCheck('sync-progress', {
       ready: {
         display: i18n('Network and Graph Sync Progress'),
         fn: async () => {
@@ -427,7 +465,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
               title: i18n('Sync Complete'),
               message: i18n('LND is synced to chain and graph.'),
             })
-            await syncNotifiedFile.write(effects, { notified: true })
+            await startupFlagsJson.merge(effects, { notified: true })
             notified = true
           }
           return null
@@ -461,6 +499,26 @@ export const main = sdk.setupMain(async ({ effects }) => {
               },
             },
             requires: ['lnd', 'unlock-wallet'],
+          }
+        : null,
+    )
+    .addOneshot('clear-restore-flag', () =>
+      // Clear the restore flag once restorechanbackup has run, so it isn't
+      // re-run on every restart. `requires: ['restore']` gates this on that
+      // oneshot completing successfully — if restorechanbackup fails the flag
+      // stays set and the restore is retried on the next startup. The flag
+      // lives outside store.json (read with `.once`), so clearing it doesn't
+      // trip a const watch and restart main.
+      restore
+        ? {
+            subcontainer: null,
+            exec: {
+              fn: async () => {
+                await startupFlagsJson.merge(effects, { restore: false })
+                return null
+              },
+            },
+            requires: ['restore'],
           }
         : null,
     )

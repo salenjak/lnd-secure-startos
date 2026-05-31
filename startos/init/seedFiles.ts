@@ -1,6 +1,7 @@
 import { utils } from '@start9labs/start-sdk'
 import { access } from 'fs/promises'
 import { lndConfFile } from '../fileModels/lnd.conf'
+import { startupFlagsJson } from '../fileModels/startupFlags.json'
 import { storeJson } from '../fileModels/store.json'
 import { customConfigJson } from '../fileModels/custom-config.json'
 import { sdk } from '../sdk'
@@ -9,6 +10,8 @@ const WALLET_DB_PATH = '/media/startos/volumes/main/data/chain/bitcoin/mainnet/w
 export const seedFiles = sdk.setupOnInit(async (effects, kind) => {
   await customConfigJson.merge(effects, {})
   const walletExists = await access(WALLET_DB_PATH).then(() => true).catch(() => false)
+  // Seed the one-time startup flags to their false defaults.
+  await startupFlagsJson.merge(effects, {})
 
   if (kind === 'install') {
     // Seed every non-upstream default so a fresh install matches the form
