@@ -11,7 +11,7 @@ import {
 
 export const manifest = setupManifest({
   id: 'lnd',
-  title: 'LND',
+  title: 'LND Secure',
   license: 'MIT',
   packageRepo: 'https://github.com/salenjak/lnd-secure-startos',
   upstreamRepo: 'https://github.com/lightningnetwork/lnd',
