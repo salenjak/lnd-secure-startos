@@ -803,35 +803,39 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: ['lnd'],
     })
-    .addHealthCheck('security-status', {
+      .addHealthCheck('security-status', {
       ready: {
         display: 'Security Status',
         fn: async () => {
           const store = await storeJson.read().once()
           const config = await customConfigJson.read().once()
+          
           const backupEnabled = config?.channelAutoBackupEnabled ?? false
-          const backupIcon = backupEnabled ? '🟢】' : '🔴】'
+          const backupIcon = backupEnabled ? '🟢' : '🔴'
           const backupText = backupEnabled ? 'ENABLED' : 'DISABLED'
-          const backupStatus = `${backupText}${backupIcon}`
+          
           const autoUnlock = store?.autoUnlockEnabled ?? false
-          const unlockIcon = autoUnlock ? '🟡】' : '🟢】'
-          const unlockText = autoUnlock ? 'AUTO ' : 'MANUAL'
-          const unlockStatus = `${unlockText}${unlockIcon}`
+          const unlockIcon = autoUnlock ? '🟡' : '🟢'
+          const unlockText = autoUnlock ? 'AUTO' : 'MANUAL'
+          
           const seedOnServer = (store?.aezeedCipherSeed || []).length > 0
-          const seedIcon = seedOnServer ? '🟡】' : '🟢】'
-          const seedText = seedOnServer ? 'ON SERVER' : 'DELETED'
-          const seedStatus = `${seedText}${seedIcon}`
+          const seedIcon = seedOnServer ? '🟡' : '🟢'
+          const seedText = seedOnServer ? 'ON\u00A0SERVER' : 'DELETED'
+          
           const wtClientEnabled = (store?.watchtowerClients || []).length > 0
-          const wtIcon = wtClientEnabled ? '🟢】' : '🔴】'
+          const wtIcon = wtClientEnabled ? '🟢' : '🔴'
           const wtText = wtClientEnabled ? 'ENABLED' : 'DISABLED'
-          const wtStatus = `${wtText}${wtIcon}`
+          
           const allGood = backupEnabled && !autoUnlock && !seedOnServer && wtClientEnabled
           const result = allGood ? 'success' : 'disabled'
-          const label1 = `【① Channels Backup: `
-          const label2 = `【② Wallet Unlocking: `
-          const label3 = `【③ Aezeed Seed: `
-          const label4 = `【④ Watchtower Client: `
-          const message = `${label1}${backupStatus}${label2}${unlockStatus}${label3}${seedStatus}${label4}${wtStatus}`
+          
+          const block1 = `【${backupIcon}\u00A0${backupText} Channels Backup】`
+          const block2 = `【${unlockIcon}\u00A0${unlockText} Wallet Unlock】`
+          const block3 = `【${seedIcon}\u00A0${seedText} Aezeed Seed】`
+          const block4 = `【${wtIcon}\u00A0${wtText} Watchtower Client】`
+          
+          const message = `${block1}${block2}${block3}${block4}`
+          
           return { message, result }
         },
       },
