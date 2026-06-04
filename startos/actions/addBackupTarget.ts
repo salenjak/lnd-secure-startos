@@ -362,6 +362,12 @@ export const addBackupTarget = sdk.Action.withInput(
           masked: true,
           required: false,
         }),
+        'email-body': sdk.Value.textarea({
+          name: 'Email Custom Message',
+          description: `Customize the text inside the backup email. Leave blank for a generic default message. It is recommended to not include sensitive node identifiers (like your Node Pubkey) here, as you risk linking your LND node to your email address, which can be tied to your real identity.<br><br><b>Example of a safe custom message:</b><br><i>"Here is the latest channel backup from my StartOS LND node. Keep it safe! Remember, this file is encrypted and can only be used with my AEZEED seed to restore."</i>`,
+          default: '',
+          required: false,
+        }),
       }),
     ),
     sftp: sdk.Value.object(
@@ -602,7 +608,7 @@ export const addBackupTarget = sdk.Action.withInput(
           masked: true,
           required: false,
         }),
-        'gdrive-path': sdk.Value.text({
+                'gdrive-path': sdk.Value.text({
           name: 'Google Drive Folder Path',
           description: 'Folder name in your Google Drive root (e.g., lnd-backups).',
           default: 'lnd-backups',
@@ -610,6 +616,11 @@ export const addBackupTarget = sdk.Action.withInput(
         }),
       }),
     ),
+    'backup-startup-grace': sdk.Value.toggle({
+      name: 'Suppress Backup on Startup',
+      description: `Enabling this toggle has <b>zero impact</b> on the receiving real-time backups for all actual channel opens and closes. <br><br><b>Why enable this?</b> Every time LND restarts and the wallet unlocks, it automatically rewrites the <code>channel.backup</code> file as part of its normal startup routine. This triggers a backup, which often causes a confusion and some users mistakenly believe a channel was opened or closed while they were offline. Turn this ON to filter out these false-positive notifications.<br><br><b>Trade-off:</b> If a peer <i>did</i> actually close a channel while your node was offline, your remote backup won't update to reflect that specific closure until your next local channel event. (Restoring from a backup that lists an already-closed channel is perfectly safe and will not result in lost funds).`,
+      default: false,
+    }),
   }),
   async ({ effects }) => {
     const config = (await customConfigJson.read().once().catch(() => ({}))) as any
@@ -627,6 +638,7 @@ export const addBackupTarget = sdk.Action.withInput(
 
     return {
       providers: selectedProviders,
+      'backup-startup-grace': config.backupStartupGracePeriod ?? false,
       email: {
         'email-from': config.emailBackup?.from || '',
         'email-to': config.emailBackup?.to || '',
@@ -634,6 +646,7 @@ export const addBackupTarget = sdk.Action.withInput(
         'email-smtp-port': config.emailBackup?.smtp_port?.toString() || '465',
         'email-smtp-user': config.emailBackup?.smtp_user || '',
         'email-smtp-pass': '',
+        'email-body': config.emailBackup?.body || '',
       },
       sftp: (() => {
         const sftpSection = sections['sftp'] || {}
@@ -699,6 +712,7 @@ export const addBackupTarget = sdk.Action.withInput(
       if (providers.length === 0) {
         await customConfigJson.merge(effects, {
           channelAutoBackupEnabled: false,
+          backupStartupGracePeriod: false,
           selectedRcloneRemotes: [],
           enabledRemotes: [],
           emailBackup: null,
@@ -713,7 +727,9 @@ export const addBackupTarget = sdk.Action.withInput(
         }
       }
 
-      let updates: any = { channelAutoBackupEnabled: true }
+      let updates: any = { 
+        channelAutoBackupEnabled: true,
+        backupStartupGracePeriod: input['backup-startup-grace'] ?? false,}   
       let existingConf = config.rcloneConfig ? Buffer.from(config.rcloneConfig, 'base64').toString('utf8') : ''
       let sections = parseRcloneConf(existingConf)
       let newSections = ''
@@ -1083,7 +1099,7 @@ Then paste the authorization code or refresh token in the fields above and submi
           const user = input.email['email-smtp-user']?.trim() || config.emailBackup?.smtp_user || ''
           const pass = input.email['email-smtp-pass']?.trim() || config.emailBackup?.smtp_pass || ''
           if (!from.trim() || !to.trim() || !user.trim() || !pass.trim()) throw new Error('Email from, to, SMTP user, and password are required.')
-          updates.emailBackup = { from, to, smtp_server: server, smtp_port: parseInt(port), smtp_user: user, smtp_pass: pass }
+          updates.emailBackup = { from, to, smtp_server: server, smtp_port: parseInt(port), smtp_user: user, smtp_pass: pass, body: input.email['email-body'] || '' }
           updates.emailEnabled = true
         }
       }
@@ -1106,10 +1122,13 @@ Then paste the authorization code or refresh token in the fields above and submi
 
       return {
         version: '1',
-        title: '✅ Backup Provider(s) Added/Edited',
-        message: `Your <b>channel.backup</b> will be synced to the selected provider(s) whenever a channel is opened or closed.<br><hr>
-                💡 Please test backup provider(s) by clicking <b>Channels - Test Auto-Backup</b>, then check the LND logs to confirm success or failure for every enabled provider.<br>
-                Also, verify that the backup folders contain the channel.backup file.`,
+        title: 'Channels - Auto-Backup',
+        message: `<span class="g-card"><header>Status: ENABLED 
+                  <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiMwMGZmOGEiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjMDBmZjhhIj5iYWNrdXAtb3V0bGluZTwvdGl0bGU+PHBhdGggZmlsbD0iIzAwZmY4YSIgZD0iTTYuNSAyMHEtMi4yOCAwLTMuODktMS41N1ExIDE2Ljg1IDEgMTQuNThxMC0xLjk1IDEuMTctMy40OHExLjE4LTEuNTMgMy4wOC0xLjk1cS42My0yLjMgMi41LTMuNzJROS42MyA0IDEyIDRxMi45MyAwIDQuOTYgMi4wNFExOSA4LjA3IDE5IDExcTEuNzMuMiAyLjg2IDEuNXExLjE0IDEuMjggMS4xNCAzcTAgMS44OC0xLjMxIDMuMTlUMTguNSAyMEgxM3EtLjgyIDAtMS40MS0uNTlRMTEgMTguODMgMTEgMTh2LTUuMTVMOS40IDE0LjRMOCAxM2w0LTRsNCA0bC0xLjQgMS40bC0xLjYtMS41NVYxOGg1LjVxMS4wNSAwIDEuNzctLjczcS43My0uNzIuNzMtMS43N3QtLjczLTEuNzdRMTkuNTUgMTMgMTguNSAxM0gxN3YtMnEwLTIuMDctMS40Ni0zLjU0UTE0LjA4IDYgMTIgNlE5LjkzIDYgOC40NiA3LjQ2UTcgOC45MyA3IDExaC0uNXEtMS40NSAwLTIuNDcgMS4wM1EzIDEzLjA1IDMgMTQuNVQ0LjAzIDE3cTEuMDIgMSAyLjQ3IDFIOXYybTMtNyIvPjwvc3ZnPg==" alt="backup" width="48" height="48"></header>
+                  <span class="g-secondary">Your <b><span class="g-primary">channel.backup</span></b> will be synced to the selected provider(s) whenever a channel is opened or closed.</span></span>
+                  <hr>
+                  <table class="g-table tui-space_top-2"><tbody><tr><td><div class="g-title"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiNmZmNjMDAiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjZmZjYzAwIj5vdXRsaW5lLXByaXZhY3ktdGlwPC90aXRsZT48cGF0aCBmaWxsPSIjZmZjYzAwIiBkPSJtMTIgMy4xOWw3IDMuMTFWMTFjMCA0LjUyLTIuOTggOC42OS03IDkuOTNjLTQuMDItMS4yNC03LTUuNDEtNy05LjkzVjYuM3pNMTIgMUwzIDV2NmMwIDUuNTUgMy44NCAxMC43NCA5IDEyYzUuMTYtMS4yNiA5LTYuNDUgOS0xMlY1em0tMSA2aDJ2MmgtMnptMCA0aDJ2NmgtMnoiLz48L3N2Zz4=" alt="tip" width="32" height="32"> <span class="g-primary">To verify that automatic channel backups are working, follow these steps:</span></div></td></tr><tr><td><span class="g-secondary"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiNmZmMxMDAiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjZmZjMTAwIj5iYXNlbGluZS1maWx0ZXItMTwvdGl0bGU+PHBhdGggZmlsbD0iI2ZmYzEwMCIgZD0iTTMgNUgxdjE2YzAgMS4xLjkgMiAyIDJoMTZ2LTJIM3ptMTEgMTBoMlY1aC00djJoMnptNy0xNEg3Yy0xLjEgMC0yIC45LTIgMnYxNGMwIDEuMS45IDIgMiAyaDE0YzEuMSAwIDItLjkgMi0yVjNjMC0xLjEtLjktMi0yLTJtMCAxNkg3VjNoMTR6Ii8+PC9zdmc+" alt="baseline-filter-1" width="24" height="24">&nbsp;&nbsp;Test backup provider(s) by running "Actions ⇢ Security ⇢ Channels - Test Auto-Backup".</span></td></tr><tr><td><span class="g-secondary"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiNmZmQwMDAiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjZmZkMDAwIj5udW1iZXItMi1ib3gtbXVsdGlwbGUtb3V0bGluZTwvdGl0bGU+PHBhdGggZmlsbD0iI2ZmZDAwMCIgZD0iTTE3IDEzaC00di0yaDJhMiAyIDAgMCAwIDItMlY3YTIgMiAwIDAgMC0yLTJoLTR2Mmg0djJoLTJhMiAyIDAgMCAwLTIgMnY0aDZtNCAySDdWM2gxNG0wLTJIN2EyIDIgMCAwIDAtMiAydjE0YTIgMiAwIDAgMCAyIDJoMTRhMiAyIDAgMCAwIDItMlYzYTIgMiAwIDAgMC0yLTJNMyA1SDF2MTZhMiAyIDAgMCAwIDIgMmgxNnYtMkgzeiIvPjwvc3ZnPg==" alt="number-2-box-multiple-outline" width="24" height="24">&nbsp;&nbsp;Check the LND logs to confirm success or failure for every enabled provider.</span></td></tr><tr><td><span class="g-secondary"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9IiNmZmMxMDAiPjx0aXRsZSB4bWxucz0iIiBmaWxsPSIjZmZjMTAwIj5udW1lcmljLXRocmVlLWJveC1tdWx0aXBsZS1vdXRsaW5lPC90aXRsZT48cGF0aCBmaWxsPSIjZmZjMTAwIiBkPSJNMTcgMTN2LTEuNWExLjUgMS41IDAgMCAwLTEuNS0xLjVBMS41IDEuNSAwIDAgMCAxNyA4LjVWN2EyIDIgMCAwIDAtMi0yaC00djJoNHYyaC0ydjJoMnYyaC00djJoNGEyIDIgMCAwIDAgMi0yTTMgNUgxdjE2YTIgMiAwIDAgMCAyIDJoMTZ2LTJIM20xOC00SDdWM2gxNG0wLTJIN2EyIDIgMCAwIDAtMiAydjE0YTIgMiAwIDAgMCAyIDJoMTRhMiAyIDAgMCAwIDItMlYzYTIgMiAwIDAgMC0yLTIiLz48L3N2Zz4=" alt="numeric-three-box-multiple-outline" width="24" height="24">&nbsp;&nbsp;Verify that the backup destination(s) and/or email contain the channel.backup file.</span></td></tr>
+                  </tbody></table>`,
         result: null,
       }
     } catch (e) {

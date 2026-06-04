@@ -6,6 +6,7 @@ export const customConfigShape = z.object({
   selectedRcloneRemotes: z.array(z.string()).nullable().catch(null),
   enabledRemotes: z.array(z.string()).nullable().catch(null),
   channelAutoBackupEnabled: z.boolean().catch(false),
+  backupStartupGracePeriod: z.boolean().catch(false),
   emailBackup: z.object({
     from: z.string(),
     to: z.string(),
@@ -13,6 +14,7 @@ export const customConfigShape = z.object({
     smtp_port: z.number(),
     smtp_user: z.string(),
     smtp_pass: z.string(),
+    body: z.string().optional().catch(''),
   }).nullable().catch(null),
   emailEnabled: z.boolean().catch(false),
 })
