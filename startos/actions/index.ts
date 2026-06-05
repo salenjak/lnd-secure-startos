@@ -1,4 +1,5 @@
 import { sdk } from '../sdk'
+import { autoconfig } from './config/autoconfig'
 import { backendConfig } from './backend'
 import { autopilotConfig } from './config/autopilot'
 import { channelsConfig } from './config/channels'
@@ -37,6 +38,7 @@ export const actions = sdk.Actions.of()
   .addAction(nodeInfo)
   .addAction(initializeWallet)
   .addAction(recreateMacaroons)
+  .addAction(autoconfig)
   .addAction(aezeedCipherSeed)
   .addAction(confirmSeedBackup)
   .addAction(deleteCipherSeed)

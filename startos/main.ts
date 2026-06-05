@@ -261,16 +261,17 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
-        .addOneshot('unlock-wallet', {
+            .addOneshot('unlock-wallet', {
       exec: {
         fn: async (subcontainer, abort) => {
+          let hasLoggedManualWait = false
+          
           while (true) {
             if (abort.aborted) {
               console.log('wallet-unlock aborted')
               break
             }
 
-            // Use upstream's robust state machine polling
             const state = await getLndState()
             if (
               state === 'UNLOCKED' ||
@@ -281,12 +282,10 @@ export const main = sdk.setupMain(async ({ effects }) => {
               break
             }
             if (state !== 'LOCKED') {
-              // NON_EXISTING (wallet not initialized yet), WAITING_TO_START, or unreachable
               await sleep(2_000)
               continue
             }
 
-            // State is LOCKED. Check if we should auto-unlock.
             const currentStore = await storeJson.read().const(effects)
             if (!currentStore) {
               await sleep(2_000)
@@ -295,18 +294,19 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
             const { autoUnlockEnabled, walletPassword } = currentStore
             if (!autoUnlockEnabled) {
-              console.log('Auto-unlock disabled. Waiting for manual unlock via UI...')
+              if (!hasLoggedManualWait) {
+                console.log('Auto-unlock disabled. Waiting for manual unlock via UI...')
+                hasLoggedManualWait = true
+              }
               await sleep(5_000)
               continue
             }
 
             if (!walletPassword) {
-              console.log('Auto-unlock enabled but no password in store. Waiting...')
               await sleep(5_000)
               continue
             }
 
-            // Use upstream's fixed base64 encoding and dynamic restPort
             const res = await subcontainer.exec([
               'curl',
               '--no-progress-meter',
@@ -364,92 +364,95 @@ export const main = sdk.setupMain(async ({ effects }) => {
           }
         : null,
     )
-    .addHealthCheck('sync-progress', {
+            .addHealthCheck('sync-progress', {
       ready: {
         display: i18n('Network and Graph Sync Progress'),
         fn: async () => {
+          // Upstream requires `unlock-wallet` to prevent `lncli getinfo` from
+          // flooding LND's logs with "wallet locked" errors. However, that
+          // dependency blocks this function from running when manual unlock
+          // is enabled. To support the custom manual unlock message without
+          // flooding logs, we check the state via the REST API first. The
+          // `/v1/state` endpoint is designed to be polled while locked and
+          // does not trigger the RPC error.
+          const state = await getLndState()
+          if (state === 'LOCKED') {
+            const store = await storeJson.read().const(effects)
+            const autoUnlockEnabled = store?.autoUnlockEnabled ?? false
+            if (!autoUnlockEnabled) {
+              return {
+                message: 'Waiting for wallet unlock...',
+                result: 'loading',
+              }
+            }
+            return { message: i18n('LND is starting…'), result: 'starting' }
+          }
+
+          let res
           try {
-            const res = await lndSub.exec(
+            res = await lndSub.exec(
               ['lncli', '--rpcserver=lnd.startos', 'getinfo'],
               {},
               30_000,
             )
-            if (
-              res.exitCode === 0 &&
-              res.stdout !== '' &&
-              typeof res.stdout === 'string'
-            ) {
-              const info: GetInfo = JSON.parse(res.stdout)
+          } catch {
+            // The LND subcontainer can be momentarily absent while main is
+            // re-running (e.g. Bitcoin Core's .cookie rotates on its restart,
+            // which tears down lnd-sub to rebuild it). With no PID 1 in the
+            // subcontainer, exec can't join its namespaces and throws a
+            // filesystem I/O error (".../proc/1/ns/pid: No such file or
+            // directory") instead of returning a result. Treat that as "still
+            // coming up" — the lnd daemon's own `ready` check reflects a
+            // genuine crash separately.
+            return { message: i18n('LND is starting…'), result: 'starting' }
+          }
+          if (
+            res.exitCode === 0 &&
+            res.stdout !== '' &&
+            typeof res.stdout === 'string'
+          ) {
+            const info: GetInfo = JSON.parse(res.stdout)
 
-              if (info.synced_to_chain && info.synced_to_graph) {
-                return {
-                  message: i18n('Synced to chain and graph'),
-                  result: 'success',
-                }
-              } else if (!info.synced_to_chain && info.synced_to_graph) {
-                return {
-                  message: i18n('Syncing to chain'),
-                  result: 'loading',
-                }
-              } else if (!info.synced_to_graph && info.synced_to_chain) {
-                return {
-                  message: i18n('Syncing to graph'),
-                  result: 'loading',
-                }
-              }
-
+            if (info.synced_to_chain && info.synced_to_graph) {
               return {
-                message: i18n('Syncing to graph and chain'),
+                message: i18n('Synced to chain and graph'),
+                result: 'success',
+              }
+            } else if (!info.synced_to_chain && info.synced_to_graph) {
+              return {
+                message: i18n('Syncing to chain'),
                 result: 'loading',
               }
-            }
-
-            if (
-              res.stderr.includes(
-                'rpc error: code = Unknown desc = waiting to start',
-              )
-            ) {
-              return {
-                message: i18n('LND is starting…'),
-                result: 'starting',
-              }
-            }
-
-            if (
-              res.stderr &&
-              typeof res.stderr === 'string' &&
-              (res.stderr.includes('wallet locked, unlock it to enable full RPC access') ||
-                res.stderr.includes('wallet is encrypted'))
-            ) {
-              const store = await storeJson.read().const(effects)
-              const autoUnlockEnabled = store?.autoUnlockEnabled ?? false
-              if (!autoUnlockEnabled) {
-                return {
-                  message: 'Waiting for wallet unlock to start syncing to chain and graph',
-                  result: 'loading',
-                }
-              }
-            }
-
-            if (res.exitCode === null) {
+            } else if (!info.synced_to_graph && info.synced_to_chain) {
               return {
                 message: i18n('Syncing to graph'),
                 result: 'loading',
               }
             }
+
             return {
-              message: `Error: ${res.stderr as string}`,
-              result: 'failure',
+              message: i18n('Syncing to graph and chain'),
+              result: 'loading',
             }
-          } catch {
-            return {
-              message: 'LND container unavailable',
-              result: 'starting',
-            }
+          }
+
+          // `lncli getinfo` only succeeds once LND's RPC server is fully
+          // active, so any non-zero (or null) exit here means LND is still
+          // coming up — e.g. the wallet isn't unlocked yet, or the RPC server
+          // reports "waiting to start" / "the RPC server is in the process of
+          // starting up". That exact wording varies by LND version, so rather
+          // than match a fixed string (the old check pinned "waiting to start"
+          // and missed 0.20's phrasing, surfacing hundreds of spurious
+          // failures per boot) we treat every non-success as a transient
+          // startup state. A genuine crash/outage is owned by the lnd daemon's
+          // `ready` check and the LND Server (/v1/state) health check.
+          return {
+            message: i18n('LND is starting…'),
+            result: 'starting',
           }
         },
       },
-      requires: ['lnd', 'unlock-wallet'],
+      requires: ['lnd'],
     })
     .addOneshot('synced-true', {
       subcontainer: null,
@@ -771,7 +774,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
             requires: ['lnd', 'unlock-wallet'],
     })
-    .addHealthCheck('wallet-status', {
+        .addHealthCheck('wallet-status', {
       ready: {
         display: 'Wallet Status',
         fn: async () => {
@@ -784,28 +787,26 @@ export const main = sdk.setupMain(async ({ effects }) => {
               result: 'loading',
             }
           }
+
+          const state = await getLndState()
+          if (state === 'LOCKED') {
+            if (!autoUnlockEnabled) {
+              return {
+                message: 'Wallet is locked as auto-unlock is disabled. Go to ⇓ Tasks or "Actions ⇢ Security ⇢ Wallet - Manual Unlock" and enter correct password.',
+                result: 'loading',
+              }
+            }
+            return {
+              message: `Wallet is locked, but auto-unlock is enabled. 🔑 Password is not correct! Go to "Actions ⇢ Security ⇢ Wallet - Auto-Unlock" and enter correct password.`,
+              result: 'loading',
+            }
+          }
+
           const res = await lndSub.exec(['lncli', '--rpcserver=lnd.startos', 'getinfo'], {}, 30_000)
           if (res.exitCode === 0) {
             return {
               message: 'Wallet is unlocked',
               result: 'success',
-            }
-          } else if (
-            res.stderr &&
-            typeof res.stderr === 'string' &&
-            (res.stderr.includes('wallet locked, unlock it to enable full RPC access') ||
-              res.stderr.includes('wallet is encrypted'))
-          ) {
-            if (autoUnlockEnabled) {
-              return {
-                message: `Wallet is locked, but auto-unlock is enabled. 🔑 Password is not correct! Go to "Actions ⇢ Security ⇢ Wallet - Auto-Unlock" and enter correct password.`,
-                result: 'loading',
-              }
-            } else {
-              return {
-                message: 'Wallet is locked as auto-unlock is disabled. Go to ⇓ Tasks or "Actions ⇢ Security ⇢ Wallet - Manual Unlock" and enter correct password.',
-                result: 'loading',
-              }
             }
           } else {
             return {
