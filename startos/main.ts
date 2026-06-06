@@ -364,21 +364,19 @@ export const main = sdk.setupMain(async ({ effects }) => {
           }
         : null,
     )
-            .addHealthCheck('sync-progress', {
+    .addHealthCheck('sync-progress', {
       ready: {
         display: i18n('Network and Graph Sync Progress'),
         fn: async () => {
-          // Upstream requires `unlock-wallet` to prevent `lncli getinfo` from
-          // flooding LND's logs with "wallet locked" errors. However, that
-          // dependency blocks this function from running when manual unlock
+          // Upstream requires `unlock-wallet` to stop sync-progress health
+          // check spamming failures during startup.
+          // Dependency blocks this function from running when manual unlock
           // is enabled. To support the custom manual unlock message without
           // flooding logs, we check the state via the REST API first. The
           // `/v1/state` endpoint is designed to be polled while locked and
           // does not trigger the RPC error.
           const state = await getLndState()
           if (state === 'LOCKED') {
-            const store = await storeJson.read().const(effects)
-            const autoUnlockEnabled = store?.autoUnlockEnabled ?? false
             if (!autoUnlockEnabled) {
               return {
                 message: 'Waiting for wallet unlock...',
@@ -387,6 +385,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
             }
             return { message: i18n('LND is starting…'), result: 'starting' }
           }
+            if (!state || state === 'WAITING_TO_START' || state === 'UNLOCKED') {
+            return { message: i18n('LND is starting…'), result: 'starting' }
+          }          
 
           let res
           try {
@@ -774,7 +775,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
             requires: ['lnd', 'unlock-wallet'],
     })
-        .addHealthCheck('wallet-status', {
+            .addHealthCheck('wallet-status', {
       ready: {
         display: 'Wallet Status',
         fn: async () => {
@@ -796,23 +797,19 @@ export const main = sdk.setupMain(async ({ effects }) => {
                 result: 'loading',
               }
             }
-            return {
-              message: `Wallet is locked, but auto-unlock is enabled. 🔑 Password is not correct! Go to "Actions ⇢ Security ⇢ Wallet - Auto-Unlock" and enter correct password.`,
-              result: 'loading',
-            }
+            return { message: i18n('LND is starting…'), result: 'starting' }
           }
 
-          const res = await lndSub.exec(['lncli', '--rpcserver=lnd.startos', 'getinfo'], {}, 30_000)
-          if (res.exitCode === 0) {
+          if (state === 'UNLOCKED' || state === 'RPC_ACTIVE' || state === 'SERVER_ACTIVE') {
             return {
               message: 'Wallet is unlocked',
               result: 'success',
             }
-          } else {
-            return {
-              message: `Unknown error: ${res.stderr as string}`,
-              result: 'failure',
-            }
+          }
+
+          return {
+            message: i18n('LND is starting…'),
+            result: 'starting',
           }
         },
       },
