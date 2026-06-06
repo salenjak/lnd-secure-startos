@@ -111,14 +111,20 @@ type Input = {
 
 export const walletPassword = sdk.Action.withInput(
   'wallet-password',
-  async ({ effects }: { effects: Effects }) => ({
-    name: 'Wallet - Password',
-    description: 'Display / Change the password used to unlock your LND wallet.',
-    warning: null,
-    allowedStatuses: 'any',
-    group: 'Security',
-    visibility: 'enabled',
-  }),
+  async ({ effects }: { effects: Effects }) => {
+    const store = await storeJson.read().const(effects)
+    return {
+      name: 'Wallet - Password',
+      description: 'Display / Change the password used to unlock your LND wallet.',
+      warning: null,
+      allowedStatuses: 'any',
+      group: 'Security',
+      visibility: store?.pendingPasswordChange
+        ? { disabled: 'Password change in progress. Please wait for LND to (re)start and apply the new password.' }
+        : 'enabled',
+    }
+  },
+  
   InputSpec.of({
     currentPassword: Value.text({
       name: 'Current Password',
