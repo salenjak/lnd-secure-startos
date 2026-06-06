@@ -129,101 +129,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     lndArgs.push('--reset-wallet-transactions')
   }
 
-    // Handle Pending Password Change
-  if (pendingPasswordChange) {
-    if (!walletPassword) {
-      throw new Error('Cannot change password: no current password available')
-    }
-    console.log('Pending password change detected. Performing change...')
-    const newPassword = Buffer.from(pendingPasswordChange, 'base64').toString('utf8')
-    const currentPassword = walletPassword
-    try {
-      await sdk.SubContainer.withTemp(
-        effects,
-        { imageId: 'lnd' },
-        mounts,
-        'change-password-temp',
-        async (lndSubTemp) => {
-          const tempArgs = [
-            '--rpclisten=0.0.0.0:10009',
-            `--restlisten=0.0.0.0:${restPort}`,
-            '--debuglevel=error',
-          ]
-          console.log('Starting LND for password change...')
-          await lndSubTemp.spawn(['lnd', ...tempArgs])
-
-          let attempts = 0
-          const maxAttempts = 60
-          let restReady = false
-          while (attempts < maxAttempts && !restReady) {
-            try {
-              const healthCheck = await lndSubTemp.exec([
-                'curl', '--no-progress-meter',
-                '--cacert', `${lndDataDir}/tls.cert`,
-                `https://lnd.startos:${restPort}/v1/getinfo`,
-              ])
-              if (healthCheck.exitCode === 0) {
-                restReady = true
-                console.log('✅ LND REST API is ready')
-              }
-            } catch {
-              // Ignore errors during startup check
-            }
-            if (!restReady) {
-              await new Promise((r) => setTimeout(r, 1000))
-              attempts++
-              console.log(`⏳ Waiting for LND to start... (${attempts}/${maxAttempts})`)
-            }
-          }
-          if (!restReady) {
-            throw new Error(`LND REST API not ready after ${maxAttempts} seconds. Check LND logs for errors.`)
-          }
-
-          const currentBase64 = base64.stringify(Buffer.from(currentPassword, 'latin1'))
-          const newBase64 = base64.stringify(Buffer.from(newPassword, 'latin1'))
-
-          const changeResult = await lndSubTemp.exec([
-            'curl', '--no-progress-meter', '-X', 'POST', '--cacert', `${lndDataDir}/tls.cert`,
-            `https://lnd.startos:${restPort}/v1/changepassword`,
-            '-d', JSON.stringify({ current_password: currentBase64, new_password: newBase64 }),
-          ])
-
-          if (changeResult.exitCode !== 0) {
-            const errorOutput = changeResult.stderr?.toString() || changeResult.stdout?.toString() || 'Unknown error'
-            throw new Error(`Password change failed: ${errorOutput.substring(0, 300)}...`)
-          }
-
-          const response = changeResult.stdout?.toString().trim() || '{}'
-          if (response !== '{}' && !response.includes('"success":true')) {
-            try {
-              const parsed = JSON.parse(response)
-              if (parsed.error || parsed.message) throw new Error(`API error: ${parsed.message || parsed.error}`)
-            } catch {
-              throw new Error(`Unexpected response: ${response.substring(0, 200)}...`)
-            }
-          }
-          console.log('Password changed successfully')
-        },
-      )
-
-      await storeJson.merge(effects, {
-        walletPassword: newPassword,
-        pendingPasswordChange: null,
-        passwordChangeError: null,
-        autoUnlockEnabled: true,
-        passwordBackupConfirmed: false,
-      }, { allowWriteAfterConst: true })
-      console.log('Auto-unlock enabled after password change')
-    } catch (err) {
-      console.error('Password change failed:', err)
-      await storeJson.merge(effects, {
-        pendingPasswordChange: null,
-        passwordChangeError: (err as Error).message || String(err),
-      }, { allowWriteAfterConst: true })
-      throw err
-    }
-  }
-
+    
   // Create Manual Unlock Task if needed
   if (!autoUnlockEnabled && store.walletInitialized) {
     console.log('Auto-unlock disabled and wallet initialized. Creating manual unlock task...')
@@ -261,17 +167,66 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
-            .addOneshot('unlock-wallet', {
+          .addOneshot('unlock-wallet', {
       exec: {
         fn: async (subcontainer, abort) => {
+          if (pendingPasswordChange) {
+            console.log('Pending password change detected. Performing change...')
+            const newPassword = Buffer.from(pendingPasswordChange, 'base64').toString('utf8')
+            const currentPassword = walletPassword || ''
+            
+            let attempts = 0
+            while (attempts < 60) {
+              if (abort.aborted) return null
+              const state = await getLndState()
+              if (state === 'LOCKED') break
+              await sleep(1000)
+              attempts++
+            }
+            
+            const currentBase64 = base64.stringify(Buffer.from(currentPassword, 'latin1'))
+            const newBase64 = base64.stringify(Buffer.from(newPassword, 'latin1'))
+            
+            const res = await subcontainer.exec([
+              'curl', '--no-progress-meter', '-f', '-X', 'POST',
+              '--cacert', `${lndDataDir}/tls.cert`,
+              `https://lnd.startos:${restPort}/v1/changepassword`,
+              '-d', JSON.stringify({ current_password: currentBase64, new_password: newBase64 }),
+            ])
+            
+            if (res.exitCode !== 0) {
+              const err = res.stderr?.toString() || res.stdout?.toString() || 'Unknown error'
+              await storeJson.merge(effects, {
+                pendingPasswordChange: null,
+                passwordChangeError: err.substring(0, 300),
+              }, { allowWriteAfterConst: true })
+              throw new Error(`Password change failed: ${err.substring(0, 300)}`)
+            }
+            
+            await storeJson.merge(effects, {
+              walletPassword: newPassword,
+              pendingPasswordChange: null,
+              passwordChangeError: null,
+              autoUnlockEnabled: true,
+              passwordBackupConfirmed: false,
+            }, { allowWriteAfterConst: true })
+            console.log('Password changed successfully and wallet unlocked.')
+            return null
+          }
+
           let hasLoggedManualWait = false
-          
+
           while (true) {
             if (abort.aborted) {
               console.log('wallet-unlock aborted')
               break
             }
 
+            // Skip the unlock call (and its noisy LND error log) only when
+            // the wallet is strictly past LOCKED. Per stateservice.proto:
+            //   NON_EXISTING=0, LOCKED=1, UNLOCKED=2, RPC_ACTIVE=3,
+            //   SERVER_ACTIVE=4, WAITING_TO_START=255.
+            // WAITING_TO_START means "not started yet" — keep polling.
             const state = await getLndState()
             if (
               state === 'UNLOCKED' ||
@@ -282,17 +237,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
               break
             }
             if (state !== 'LOCKED') {
+              // NON_EXISTING, WAITING_TO_START, or endpoint unreachable —
+              // wallet unlocker isn't ready for a POST yet.
               await sleep(2_000)
               continue
             }
 
-            const currentStore = await storeJson.read().const(effects)
-            if (!currentStore) {
-              await sleep(2_000)
-              continue
-            }
-
-            const { autoUnlockEnabled, walletPassword } = currentStore
             if (!autoUnlockEnabled) {
               if (!hasLoggedManualWait) {
                 console.log('Auto-unlock disabled. Waiting for manual unlock via UI...')
@@ -302,10 +252,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
               continue
             }
 
-            if (!walletPassword) {
-              await sleep(5_000)
-              continue
-            }
+            if (!walletPassword)
+              throw new Error('Wallet Password is undefined!')
 
             const res = await subcontainer.exec([
               'curl',
@@ -316,7 +264,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
               `${lndDataDir}/tls.cert`,
               `https://lnd.startos:${restPort}/v1/unlockwallet`,
               '-d',
-              restore // <--- Uses the top-level variable from startupFlags!
+              restore
                 ? JSON.stringify({
                     wallet_password: base64.stringify(
                       Buffer.from(walletPassword, 'latin1'),
@@ -331,6 +279,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
             ])
             console.log('wallet-unlock response', res)
             const stdout = res.stdout.toString().trim()
+            // `{}` = unlock succeeded. "wallet already unlocked" = wallet is
+            // already past the LOCKED state (e.g. because /v1/state raced
+            // with the oneshot). Both mean we're done.
             if (stdout === '{}' || stdout.includes('wallet already unlocked')) {
               break
             }
