@@ -39,9 +39,9 @@ The image is built here because two extra binaries are needed alongside `lnd`.
 
 | Property      | Value                                                                          |
 | ------------- | ------------------------------------------------------------------------------ |
-| Image         | Built from `Dockerfile` — upstream `lnd`, plus `lndinit` and the `sqlite3` CLI |
+| Image         | Built from `Dockerfile` — upstream `lnd`, plus `lndinit`, `sqlite3`, `rclone`, `mutt`, `inotifywait`, and `jq` |
 | Architectures | x86_64, aarch64                                                                |
-| Subcontainer  | `lnd-sub` — the `lnd` daemon, and the one to `attach` to                       |
+| Subcontainer  | `lnd-sub` — the `lnd` daemon, the `channel-backup-watcher` daemon, and the one to `attach` to |
 
 `lndinit` and `sqlite3` exist for the bolt-to-SQLite conversion described below. A separate `import-<source>` subcontainer is created when a wallet import is scheduled.
 
@@ -49,7 +49,9 @@ The image is built here because two extra binaries are needed alongside `lnd`.
 
 1. **Import** — a wallet migration from another node is pending, so the only thing running is the copy.
 2. **Conversion** — an imported bolt database has to be converted before LND may open it.
-3. **Normal** — the LND daemon and its supporting oneshots.
+3. **Normal** — the LND daemon, the `channel-backup-watcher` daemon, and their supporting oneshots.
+
+In normal mode the `channel-backup-watcher` daemon runs alongside LND inside `lnd-sub`. It watches `channel.backup` for changes using `inotifywait` and syncs it to configured backup providers (SFTP, Dropbox, Nextcloud, Google Drive, email) via `rclone` and `mutt`. It reads its configuration from `custom-config.json`.
 
 ## Volume and Data Layout
 
@@ -63,13 +65,14 @@ Bitcoin's data directory is mounted **read-only** at `/mnt/bitcoin` when bitcoin
 
 ## File Models
 
-Three models, and the split between two of them is load-bearing.
+Four models, and the split between the first two is load-bearing.
 
 | File                 | Format | Modelled                | Written by                                                |
 | -------------------- | ------ | ----------------------- | --------------------------------------------------------- |
 | `lnd.conf`           | INI    | Yes — `FileHelper.ini`  | Every init, every start, and the config actions           |
 | `store.json`         | JSON   | Yes — `FileHelper.json` | Install, and the wallet and watchtower actions            |
 | `startup-flags.json` | JSON   | Yes — `FileHelper.json` | Actions, the restore hook, and `main` as it consumes them |
+| `custom-config.json` | JSON   | Yes — `FileHelper.json` | The channel-backup watcher daemon and the wallet-unlock flag |
 
 **`startup-flags.json` is deliberately not part of `store.json`.** `main` reads the store under a watch that restarts the service on any change, so clearing a consumed flag there would restart the service in a loop — the bug that once made Reset Wallet Transactions re-run on every start. The flags file is read once instead, and cleared without triggering anything.
 
@@ -99,7 +102,7 @@ Two further keys are forced absent for correctness rather than preference: **`db
 
 ### store.json and startup-flags.json
 
-`store.json` holds the wallet password, the seed if the package generated one, the registered watchtower clients, and any custom external hosts.
+`store.json` holds the wallet password, the seed if the package generated one, the registered watchtower clients, any custom external hosts, and — as the deliberate exception to the startup-flags rule — the pending wallet-password change and the error from a failed one. The change lives there, not in the flags file, because the store write that schedules it is what restarts `main` into the run that applies it (see [Wallet - Password](#security)). A stranded `pendingPasswordChange` is cleared at init so the two password actions can never stay disabled in "change in progress" forever.
 
 `startup-flags.json` holds one-time requests: a pending wallet import (**including the origin node's password**, since nothing else persists it), a wallet-transaction reset, a macaroon rotation, a restore marker, and whether the sync notification has fired. Each is consumed by `main` and cleared once the work it asked for has run.
 
@@ -149,15 +152,45 @@ The TLS pair is issued at init for every address LND answers on — the containe
 
 ## Actions
 
-Sixteen actions. Ten configure the node, three are wallet and credential operations, and three are hidden.
+Twenty-five actions. The ten group under Configuration write the node's config, wallet and credential operations sit under Security, three are read-only, and three are hidden.
 
 ### Configuration
 
-Nine actions grouped under Configuration, each writing its own part of `lnd.conf`: **General Settings** (alias, colour, keysend and AMP), **Routing Fees**, **Channel Settings**, **Autopilot Settings**, **Tor Settings**, **Custom External Host**, **Performance**, **Watchtower Server**, and **Watchtower Client Settings**. Each costs seconds plus a restart, is pre-filled from the current file, and is safe to re-run.
+Nine actions grouped under Configuration, each writing its own part of `lnd.conf`: **General Settings** (alias, colour, keysend and AMP), **Routing Fees**, **Channel Settings**, **Autopilot Settings**, **Tor Settings**, **Custom External Host**, **Performance**, **Watchtower - Server**, and **Watchtower - Client**. Each costs seconds plus a restart, is pre-filled from the current file, and is safe to re-run.
 
 **Bitcoin Backend** is in the same group but `visibility: 'hidden'` — it is reached through the install task rather than browsed to. It chooses bitcoind or Neutrino, and with it the dependency set, the mount, and the whole backend section of the config.
 
-**Watchtower Server** additionally deletes the watchtower server's database when the server is switched off, so a disabled tower does not keep client session state it can no longer serve.
+**Watchtower - Server** additionally deletes the watchtower server's database when the server is switched off, so a disabled tower does not keep client session state it can no longer serve.
+
+### Security
+
+A group of ten actions covering the channel-backup feature, the wallet password, and the on-chain seed:
+
+**Channels - Auto-Backup** runs a background watcher that uploads `channel.backup` to SFTP, Dropbox, Nextcloud, Google Drive, or a fixed set of email recipients every time it changes (that is, every channel open, close, or update). When LND writes a closer update to `channel.backup`, the watcher syncs the file to every enabled provider. Because a stale `channel.backup` cannot recover channels state the network has moved past, this is a redundancy for the StartOS backups — it reproduces the same file, and both should be kept.
+
+**Channels - Test Auto-Backup** runs the watcher's backup once on demand, so a provider can be verified without opening a channel.
+
+- **What it changes:** only a file write into the volume; the watcher reads it and mirrors it.
+- **Cost:** on a stopped or idle node it is instantaneous; on a running node it exchanges the file through a temporary container.
+- **Repeat safety:** safe to re-run.
+
+**Wallet - Auto Unlock** — toggles whether LND unlocks automatically on start. With auto-unlock **on** (the default) the wallet password is stored on the server, and anyone with physical access to the machine — e.g. who resets StartOS's master password — can use the unlocked wallet to take the funds. Turning it **off** deletes the password from the server; the wallet is then unlocked manually by you each time the node restarts. Disabling it requires first confirming the password backup (see below). The **Security Status** health check turns green only when auto-unlock is off.
+
+**Wallet - Manual Unlock** — unlocks a wallet whose auto-unlock is disabled. It appears as a task on the dashboard while the node is up but the wallet is locked, and is disabled with **UNLOCKED** once the wallet has been unlocked (the flag lives in `custom-config.json`, reset to locked on every LND start under auto-unlock-off).
+
+**Wallet - Password** — shows or changes the wallet password. Changing it stages the *current* password, the new password (base64 so it is never logged), and `autoUnlockEnabled: true` into `store.json` and restarts LND. The pending change is read from the store (it is the one deliberate exception to the startup-flags rule: the store write is what restarts `main` into the run that applies it) and applied at the **top** of the wallet-unlock oneshot, while the wallet is still `LOCKED` — LND's `changepassword` endpoint is served only by the unchanged WalletUnlocker, so a change scheduled after unlocking always fails. After the change succeeds the wallet is already unlocked, the new password is adopted, and `main` restarts into normal operation. A password change is a deliberate interruption of the wallet's operating (all clients connected to LND are disconnected and must re-pair).
+
+A change also **resets the Wallet - Password Backup confirmation**, because the previously backed-up password is now stale. When auto-unlock is **off** the change temporarily turns it **on** — the password is deliberately not on the server, so staging it is the only way the oneshot can reach `changepassword`. After the restart the new password is on the server again (auto-unlock on), so you can confirm the new password backup; turn auto-unlock back off afterwards. If the change cannot be applied, the pending flag is cleared and the failure is recorded as an error rather than stranding the actions in "change in progress" forever; init also clears any stranded flag on every boot.
+
+**Wallet - Password Backup** — requires you to type the wallet password back to confirm you have it saved. This is a prerequisite for turning off **Auto-Unlock** and for **Delete Wallet Password**. It is reset to unconfirmed automatically whenever the wallet password is changed, and it cannot be re-confirmed without knowing the (new) password.
+
+**Delete Wallet Password** — deletes the wallet password once its backup is confirmed. Because LND does not unlock without this password, this is how a node is protected from a stolen machine while keeping only the channels backed up. Understand that with auto-unlock off the node does **not** come back online by itself after a reboot — the manual unlock step is required.
+
+**Aezeed Cipher Seed** — displays the on-chain only seed, and is disabled (hidden) if the seed was not retained. It is the on-chain seed, not a BIP-39 seed, and does **not** recover channel funds. Used with a StartOS backup (the SCB) a seed restores the wallet; used alone it restores only on-chain funds.
+
+**Aezeed Cipher Seed - Backup** — confirm the seed by typing three of its words in positions chosen at random. This unlocking feature is part of the security posture: the seed is present on the server until you confirm it is backed up and then delete it, and the **Security Status** health check reports it.
+
+**Aezeed Cipher Seed - Delete** — removes the seed from `store.json`, so an attacker that gets the server cannot convert it to an HD key to sweep on-chain funds. Requires first confirming the backup.
 
 ### Initialize Wallet — hidden
 
@@ -179,7 +212,7 @@ Rotates the macaroon root key, invalidating **every** macaroon this node has iss
 - **Repeat safety:** safe, but every application connected to this node must be re-paired afterwards — including through the connect interfaces above, which are regenerated with the new macaroon.
 - **When to run it:** if a macaroon may have been exposed. Note that a service reading LND's admin macaroon through a mount has full control of the node, which is why other packages' security fixes sometimes ask you to run this.
 
-### Node Info, Watchtower Server Info
+### Node Info, Watchtower - Server Info
 
 Read-only, running only. The first reports the node's identity, URIs, and sync state; the second reports the watchtower server's identity, and is hidden unless that server is enabled.
 
@@ -189,13 +222,14 @@ Read-only, running only. The first reports the node's identity, URIs, and sync s
 
 ## Tasks
 
-Two at install, plus one raised on Bitcoin.
+Two at install, one raised on Bitcoin, plus a manual-unlock task while the wallet is up but locked with auto-unlock off.
 
 | Task              | Raised on | Severity   | Raised when                                        | Cleared when                                          |
 | ----------------- | --------- | ---------- | -------------------------------------------------- | ----------------------------------------------------- |
 | Initialize Wallet | this      | `critical` | At install                                         | The action runs                                       |
 | Bitcoin Backend   | this      | `critical` | At install                                         | The action runs                                       |
 | Auto-Configure    | Bitcoin   | `critical` | The backend is bitcoind and its ZeroMQ is disabled | Bitcoin's config matches; it returns if changed again |
+| Wallet - Manual Unlock | this  | `important` | Wallet initialized and auto-unlock disabled         | The wallet is unlocked                                |
 
 The Bitcoin task appears on **Bitcoin's** page with nothing there explaining which service asked for it. LND needs ZeroMQ to be told about new blocks and transactions; polling is not a substitute.
 
@@ -211,6 +245,14 @@ Which checks exist depends on what the service is doing.
 | `sync-progress` | "Network and Graph Sync Progress" | Normal operation                         |
 | `reachability`  | "Node Reachability"               | Normal operation                         |
 | `restored`      | Restore notice                    | After a seed restore                     |
+| `wallet-status` | "Wallet Status"                   | Normal operation                         |
+| `security-status` | "Security Status"               | Normal operation                         |
+
+The `channel-backup-watcher` daemon contributes a status (enabled or disabled) but no named health check of its own.
+
+**`security-status` summarises the Security posture** in one line: channels auto-backup on or off, wallet auto-unlock on or off, whether the on-chain seed is still on the server, and whether a watchtower client is enabled. It returns `disabled` whenever that "secure" ideal (backup on, auto-unlock off, seed deleted, watchtower client on) is not met. Several settings it depends on are deliberately _not_ the secure default — auto-unlock defaults to on and the seed stays until deleted — so a fresh node reports `disabled` until you tighten them.
+
+**`wallet-status`** reflects whether the wallet is unlocked, and when it is not, why. It reads `/v1/state` rather than `lncli getinfo`, because the gRPC service reports "in the process of starting up" until the wallet is unlocked — indistinguishable from a genuine startup — whereas `/v1/state` says `LOCKED` outright. It holds at "starting" for the first **10 seconds** of a lock so it never flashes an alarm on the brief stop a correct auto-unlock password takes on its way to unlocking, then reports differently for a wallet that auto-unlocks (password may be wrong) versus one that is locked waiting for the manual unlock.
 
 **`sync-progress` covers two different syncs** — the chain and the network graph — and a node can be caught up on one while still working through the other. It is the check to read while a node is coming up for the first time.
 
@@ -229,7 +271,7 @@ That state is indistinguishable from a large legitimate backfill through `getinf
 The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')` — with a substantial exclude list, and the exclusions are the substance.
 
 - **Excluded:** the network graph, the channel database, the sphinx replay database, the Neutrino chain data and header files, the logs, and `startup-flags.json`.
-- **Included:** `lnd.conf`, `store.json` with the wallet password and seed, the TLS pair, the macaroons, and the wallet database.
+- **Included:** `lnd.conf`, `store.json` with the wallet password and seed, `custom-config.json` with the channel-backup targets, the TLS pair, the macaroons, and the wallet database.
 
 **The channel database is deliberately not backed up.** Restoring a stale one claims channel states the network has moved past, which is how funds are lost — so a restore recovers the wallet and relies on static channel backups to close channels cooperatively, rather than resuming them.
 
@@ -266,6 +308,7 @@ file_models:
   - /root/.lnd/lnd.conf
   - /root/.lnd/store.json
   - /root/.lnd/startup-flags.json # excluded from backups; can hold an origin password
+  - /root/.lnd/custom-config.json # channel-backup config and wallet-unlock flag
 startos_managed_env_vars: []
 dependencies: # both conditional on configuration
   - bitcoind # when the backend is bitcoind; /mnt/bitcoin, read-only
@@ -289,6 +332,16 @@ actions:
   - initialize-wallet # hidden, only-stopped; raised by task
   - reset-wallet-transactions
   - revoke-macaroons
+  - aezeed-cipher-seed # Security; hidden if seed deleted
+  - aezeed-cipher-seed-backup # Security; requires 3-word challenge
+  - aezeed-cipher-seed-delete # Security; requires backup confirmed
+  - channels-auto-backup # Security; channel backup provider config
+  - channels-test-auto-backup # Security; manual backup trigger
+  - wallet-auto-unlock # Security; toggle auto-unlock
+  - wallet-manual-unlock # Security; hidden when wallet is unlocked
+  - wallet-password # Security; view/change password
+  - wallet-password-backup # Security; confirm backup, then delete password
+  - delete-wallet-password # Security; requires backup confirmed
   - node-info # only-running
   - tower-info # only-running; hidden unless the tower is enabled
   - autoconfig # hidden; driven by dependents
@@ -296,10 +349,13 @@ tasks:
   - { action: initialize-wallet, severity: critical }
   - { action: backend-config, severity: critical }
   - { action: autoconfig, severity: critical } # on bitcoind, for ZeroMQ
+  - { action: wallet-manual-unlock, severity: important } # when auto-unlock disabled
 health_checks:
   - lnd # displayed "LND Server"
   - sync-progress # displayed "Network and Graph Sync Progress"; synced_to_chain, synced_to_graph, num_peers
   - reachability # displayed "Node Reachability"
+  - wallet-status # displayed "Wallet Status"
+  - security-status # displayed "Security Status"; all-green = secure posture
   - import # only while a wallet import runs
   - db-migration # only while a bolt database is converted
   - restored # only after a seed restore
