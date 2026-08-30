@@ -7,7 +7,7 @@
 
 ## What you get on StartOS
 
-A full **LND** node on Bitcoin mainnet, with **REST** and **gRPC** LND Connect interfaces, a **Peer** interface for inbound Lightning connections, and an optional **Watchtower** server. StartOS manages the wallet lifecycle — creation, password storage, and auto-unlock on every start — so you never run `lncli create` or `lncli unlock`. It runs on the **SQLite** database backend, Lightning Labs' recommended modern backend.
+A full **LND** node on Bitcoin mainnet, with **REST** and **gRPC** LND Connect interfaces, a **Peer** interface for inbound Lightning connections, and an optional **Watchtower** server. StartOS manages the wallet lifecycle — creation, password storage, and auto-unlock on every start — so you never run `lncli create` or `lncli unlock`. It runs on the **SQLite** database backend, Lightning Labs' recommended modern backend. It also includes **channel auto-backup** to external providers (SFTP, Dropbox, Nextcloud, Google Drive, email), **wallet hardening** (auto-unlock can be disabled, password and seed can be deleted from the server), and a **Security Status** health check that summarizes your security posture at a glance.
 
 ## Getting set up
 
@@ -19,6 +19,18 @@ LND posts two critical tasks on install; you can't start it until both are done:
 Then start LND.
 
 On every start, **Network and Graph Sync** goes through _Syncing to graph_ before it reaches _Synced_ — usually well under three minutes. If it reads _Waiting for peers_, LND has not connected to any yet. LND depends on a single peer it picks at startup to hand over the channel graph, and if that peer stops responding the sync waits on it; the check then tells you how long it has been pending. LND retries with a different peer within the hour on its own, so this normally clears itself. If you would rather not wait, restart LND — it picks a different peer. A node with no channels sees this most often, because it has no regular peers to reconnect to.
+
+### Securing your node
+
+After starting LND for the first time, consider these security steps under **Actions > Security**:
+
+1. **Set up Channels - Auto-Backup** — configure at least one backup provider (SFTP, Dropbox, Nextcloud, Google Drive, or email) to protect your channel funds.
+2. **Confirm Wallet - Password Backup** — type your wallet password to confirm you have it saved.
+3. **Disable Wallet - Auto Unlock** — this deletes the password from the server so a stolen machine cannot auto-unlock the wallet. You will need to manually unlock via the Dashboard task each time LND restarts.
+4. **Confirm Aezeed Cipher Seed - Backup** — type three seed words to confirm you have written them down.
+5. **Delete Aezeed Cipher Seed** — removes the seed from the server.
+
+The **Security Status** health check turns green when all five are in their secure state.
 
 ## Using LND
 
@@ -40,21 +52,41 @@ Other nodes connect to you over the **Peer** interface; run **Node Info** for yo
 
 ### Configuration
 
-Configure LND through its settings actions — General, Routing Fees, Channel Settings, Autopilot, Performance, Watchtower Server/Client, Bitcoin Backend, Tor, and Custom External Host. You can also edit `lnd.conf` directly: your settings are preserved across restarts, except for a few keys StartOS manages for you (`externalip`/`externalhosts`, `tor.socks`, and the Bitcoin backend connection settings).
+Configure LND through its settings actions — General, Routing Fees, Channel Settings, Autopilot, Performance, Bitcoin Backend, Tor, and Custom External Host. You can also edit `lnd.conf` directly: your settings are preserved across restarts, except for a few keys StartOS manages for you (`externalip`/`externalhosts`, `tor.socks`, and the Bitcoin backend connection settings).
 
 **Not routing any payments?** Check **Reject Routing Requests** under **Channel Settings**. With it on, LND still sends and receives payments but refuses to be used as a hop, and the log shows `node configured to disallow forwards` each time it turns one away.
 
 Two advanced actions worth knowing: **Reset Wallet Transactions** rescans the chain for on-chain transactions LND may have missed; **Revoke Macaroons** revokes every existing macaroon and mints fresh ones, after which you must reconnect wallets with the new `lndconnect://` URI.
 
+The **Security** group (under Actions) covers channel auto-backup configuration, wallet password management, auto-unlock toggling, on-chain seed management, and watchtower server/client configuration. See [Security and channel backups](#security-and-channel-backups) below.
+
 Run **Revoke Macaroons** if a macaroon may have been copied or exposed — for example if you run BTCPay Server, which reads LND's admin macaroon and shipped an actively exploited vulnerability in versions before 2.4.2. Every other service connected to LND also loses access until it picks up the new macaroon, so expect to restart them.
+
+## Security and channel backups
+
+LND runs a **Channels - Auto-Backup** feature that uploads its `channel.backup` file to one or more services — SFTP, Dropbox, Nextcloud, Google Drive, or by email — whenever a channel is opened, closed, or updated. This is a **redundancy for, not a replacement of**, StartOS backups: both serve the same Static Channel Backup file. Set it up under **Actions → Security → Channels - Auto-Backup** (it steps you through each provider), then verify it with **Channels - Test Auto-Backup**. The **Security Status** health check summarises its current state.
+
+The same **Security** group governs how protected the wallet is against a stolen machine:
+
+- **Wallet - Password / Wallet - Password Backup** — StartOS stores your wallet password so it can unlock LND for you. Changing the wallet password resets its backup confirmation, so you are asked to confirm the new password again. If you want the node to be safe against a machine that is stolen — where an attacker resets StartOS's master password and then uses your unlocked wallet — confirm you have the password saved, then turn **Wallet - Auto Unlock** off, which deletes the password from the server. The wallet is then **unlocked manually by you** every time the node starts, via the **Wallet - Manual Unlock** task.
+- Understand the trade-off: with auto-unlock off, a node **does not** come back online by itself after a reboot.
+- **Aezeed Cipher Seed / Backup / Delete** show the on-chain seed, let you confirm you have written it down, and then remove it from the server. The seed recovers on-chain funds only and is not a BIP-39 seed. Deleting it protects on-chain funds from a machine that is stolen: without the seed, an attacker cannot sweep them from the unlocked wallet.
+- **Watchtower - Server** enables or disables the watchtower server. Setting the address to 'none' disables it and permanently deletes the backup data it holds for client nodes.
+- **Watchtower - Client** edits the watchtower client settings. A node with a watchtower client attached backs up channel state to the tower, which can penalize a cheating counterparty if you're offline.
+
+A node that has auto-unlock off, its on-chain seed deleted, a channels backup configured, and a watchtower client attached is the "all green" case of the **Security Status** health check.
 
 ## Backups
 
-StartOS backs up LND with its system backup. **For a Lightning node this is essential:** your seed recovers on-chain funds only, while channel funds can be recovered only by force-closing from LND's **Static Channel Backup**, which is included in StartOS backups. Back up regularly.
+StartOS backs up LND with its system backup. **For a Lightning node this is essential:** your seed recovers on-chain funds only, while channel funds can be recovered only by force-closing from LND's **Static Channel Backup**, which is included in StartOS backups. Back up regularly. For additional protection, configure **Channels - Auto-Backup** under Actions > Security to upload your `channel.backup` file to external providers whenever channels open or close. This is a redundancy for StartOS backups, not a replacement — both serve the same file.
 
 ### Restoring from backup
 
 Restoring force-closes every channel from the Static Channel Backup and shows a persistent warning. **Lightning Labs strongly recommends against continued use of a restored node:** once funds are back on-chain, sweep them to another wallet, then uninstall and reinstall LND fresh.
+
+StartOS restores the wallet database and `channel.backup` directly from the backup — the seed is not used. Deleting the seed from the server does not weaken your StartOS backups.
+
+**With auto-unlock off:** If you restored a backup where auto-unlock was disabled, the wallet password is not stored on the server. After the volume restore, you must manually unlock the wallet via the **Wallet - Manual Unlock** task on the Dashboard. The channel backup restore retries automatically until the wallet is unlocked, then cooperatively closes every channel.
 
 ## Limitations
 
